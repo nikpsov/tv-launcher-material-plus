@@ -1571,19 +1571,24 @@ public class HomeActivity extends Activity {
         boolean pinned = PinnedApps.isPinned(this, pkg);
         CharSequence label = appLabel(pkg);
         String actionText = pinned ? "Открепить от главного экрана" : "Закрепить на главном экране";
+        String[] items = new String[]{actionText, "Настройки приложения"};
         new AlertDialog.Builder(this)
                 .setTitle(label)
-                .setItems(new String[]{actionText}, (d, which) -> {
-                    if (pinned) {
-                        PinnedApps.unpin(this, pkg);
-                        dockKey = "";
-                        fillDock();
-                        Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
-                    } else {
-                        PinnedApps.pin(this, pkg);
-                        dockKey = "";
-                        fillDock();
-                        Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                .setItems(items, (d, which) -> {
+                    if (which == 0) {
+                        if (pinned) {
+                            PinnedApps.unpin(this, pkg);
+                            dockKey = "";
+                            fillDock();
+                            Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
+                        } else {
+                            PinnedApps.pin(this, pkg);
+                            dockKey = "";
+                            fillDock();
+                            Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                        }
+                    } else if (which == 1) {
+                        openAppSettings(pkg);
                     }
                 })
                 .show();
@@ -1596,23 +1601,39 @@ public class HomeActivity extends Activity {
             List<String> allPinned = PinnedApps.load(this);
             boolean canReorder = allPinned.size() > 1;
             String[] items = canReorder
-                    ? new String[]{"Открепить", "Переместить"}
-                    : new String[]{"Открепить"};
+                    ? new String[]{"Открепить", "Переместить", "Настройки приложения"}
+                    : new String[]{"Открепить", "Настройки приложения"};
             new AlertDialog.Builder(this)
                     .setTitle(label)
                     .setItems(items, (d, which) -> {
                         if (which == 0) unpinApp(pkg, label);
-                        else startReordering(pkg);
+                        else if (which == 1 && canReorder) startReordering(pkg);
+                        else openAppSettings(pkg);
                     }).show();
         } else {
             new AlertDialog.Builder(this)
                     .setTitle(label)
-                    .setItems(new String[]{"Закрепить на главном экране"}, (d, which) -> {
-                        PinnedApps.pin(this, pkg);
-                        dockKey = "";
-                        fillDock();
-                        Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                    .setItems(new String[]{"Закрепить на главном экране", "Настройки приложения"}, (d, which) -> {
+                        if (which == 0) {
+                            PinnedApps.pin(this, pkg);
+                            dockKey = "";
+                            fillDock();
+                            Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                        } else if (which == 1) {
+                            openAppSettings(pkg);
+                        }
                     }).show();
+        }
+    }
+
+    private void openAppSettings(String pkg) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.fromParts("package", pkg, null));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        } catch (ActivityNotFoundException | SecurityException e) {
+            launch(new Intent(Settings.ACTION_SETTINGS));
         }
     }
 
