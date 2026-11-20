@@ -1,5 +1,6 @@
-build/
+scripts/build_win.py
 *.apk
+build/
 *.jks
 .DS_Store
 
@@ -8,3 +9,4 @@ voice-deps/
 openrouter_key
 __pycache__/
 *.pyc
+

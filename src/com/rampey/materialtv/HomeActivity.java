@@ -1,5 +1,7 @@
 package com.rampey.materialtv;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.ArgbEvaluator;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
@@ -129,6 +131,8 @@ public class HomeActivity extends Activity {
     private TextView focusTitle;
     private ButtonGroup nav;
     private String reorderingPkg;
+    private View leftScrim, rightScrim;
+    private GradientDrawable leftScrimShape, rightScrimShape;
 
     // Focus settles before the expensive part runs, so holding a direction stays smooth.
     private String pendingPkg;
@@ -479,7 +483,15 @@ public class HomeActivity extends Activity {
         page.addView(gap, new LinearLayout.LayoutParams(1, dp(28)));
 
         // The dock: a rounded tonal container holding the favorites, like Material's floating toolbar.
-        FrameLayout dockFrame = new FrameLayout(this);
+        FrameLayout dockFrame = new FrameLayout(this) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                scroller.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+                int h = scroller.getMeasuredHeight() + getPaddingTop() + getPaddingBottom();
+                int exactHeightSpec = MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY);
+                super.onMeasure(widthMeasureSpec, exactHeightSpec);
+            }
+        };
         dockFrame.setClipChildren(false);
         dockShape = new GradientDrawable();
         dockShape.setCornerRadius(dp(40));
@@ -487,7 +499,13 @@ public class HomeActivity extends Activity {
         dockFrame.setBackground(dockShape);
         dockFrame.setPadding(dp(DOCK_PAD), dp(6), dp(DOCK_PAD), dp(6));
 
-        scroller = new HorizontalScrollView(this);
+        scroller = new HorizontalScrollView(this) {
+            @Override
+            public void requestChildFocus(View child, View focused) {
+                super.requestChildFocus(child, focused);
+                if (child != null) scrollDockToTile(child);
+            }
+        };
         scroller.setHorizontalScrollBarEnabled(false);
         scroller.setSmoothScrollingEnabled(true);
         scroller.setClipToPadding(false);
@@ -496,7 +514,31 @@ public class HomeActivity extends Activity {
         dock = new LinearLayout(this);
         dock.setClipChildren(false);
         scroller.addView(dock);
-        dockFrame.addView(scroller);
+        dockFrame.addView(scroller, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        float r = dp(40);
+        leftScrimShape = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{withAlpha(palette.container, 0xF0), Color.TRANSPARENT});
+        leftScrimShape.setCornerRadii(new float[]{r, r, 0, 0, 0, 0, r, r});
+        leftScrim = new View(this);
+        leftScrim.setBackground(leftScrimShape);
+        leftScrim.setFocusable(false);
+        leftScrim.setClickable(false);
+        leftScrim.setAlpha(0f);
+        dockFrame.addView(leftScrim, new FrameLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
+
+        rightScrimShape = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{Color.TRANSPARENT, withAlpha(palette.container, 0xF0)});
+        rightScrimShape.setCornerRadii(new float[]{0, 0, r, r, r, r, 0, 0});
+        rightScrim = new View(this);
+        rightScrim.setBackground(rightScrimShape);
+        rightScrim.setFocusable(false);
+        rightScrim.setClickable(false);
+        rightScrim.setAlpha(0f);
+        dockFrame.addView(rightScrim, new FrameLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
+
+        scroller.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> updateScrollScrims());
+
         page.addView(dockFrame, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return page;
     }
@@ -672,9 +714,9 @@ public class HomeActivity extends Activity {
         warmPalettes(present);
         int n = Math.max(1, present.size());
         float screenDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
-        int countForSize = Math.min(6, n);
-        float inner = screenDp - 2 * (SIDE + DOCK_PAD + SCROLL_PAD) - (countForSize - 1) * GAP - countForSize * 2 * RING;
-        int tileDp = (int) Math.max(96, Math.min(220, inner / countForSize));
+        float countForSize = n > 6 ? 6.4f : Math.min(6, n);
+        float inner = screenDp - 2 * (SIDE + DOCK_PAD + SCROLL_PAD) - (Math.min(6, n) - 1) * GAP - Math.min(6, n) * 2 * RING;
+        int tileDp = (int) Math.max(92, Math.min(220, inner / countForSize));
         int i = 0;
         for (String pkg : present) {
             Intent intent = dockIntent(pkg);
@@ -687,6 +729,7 @@ public class HomeActivity extends Activity {
         }
         if (!showingApps && dock.getChildCount() > 0 && reorderingPkg == null) dock.getChildAt(0).requestFocus();
         updateBadges();
+        dock.post(this::updateScrollScrims);
     }
 
     private void fillApps() {
@@ -757,7 +800,7 @@ public class HomeActivity extends Activity {
         card.setTag(pkg);
         GradientDrawable cardShape = new GradientDrawable();
         cardShape.setCornerRadius(radius);
-        cardShape.setColor(palette.containerHigh);
+        cardShape.setColor(banner != null ? Color.TRANSPARENT : palette.containerHigh);
         card.setBackground(cardShape);
         card.setClipToOutline(true);
         ImageView image = new ImageView(this);
@@ -782,6 +825,9 @@ public class HomeActivity extends Activity {
         ringFrame.setPadding(dp(RING), dp(RING), dp(RING), dp(RING));
         ringFrame.setBackground(ring);   // the ring sits in the gap around the card; badges draw above it
         ringFrame.addView(card, new FrameLayout.LayoutParams(w, h));
+
+        final ValueAnimator[] ringAnim = new ValueAnimator[1];
+        final ObjectAnimator[] cornerAnim = new ObjectAnimator[1];
 
         boolean isReordering = inDock && pkg.equals(reorderingPkg);
         if (isReordering) {
@@ -821,17 +867,24 @@ public class HomeActivity extends Activity {
             card.setOutlineAmbientShadowColor(palette.primary);
             card.animate().translationZ(focused || activeMove ? dp(14) : 0)
                     .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
-            ObjectAnimator corners = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), focused ? radius * 0.62f : radius)
-                    .setDuration(Motion.FAST_SPATIAL_MS);
-            corners.setInterpolator(Motion.FAST_SPATIAL);
-            corners.start();
-            ring.setCornerRadius((focused ? radius * 0.62f : radius) + dp(RING));
+
+            if (cornerAnim[0] != null) cornerAnim[0].cancel();
+            float targetRadius = (focused || activeMove) ? radius * 0.62f : radius;
+            cornerAnim[0] = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), targetRadius);
+            cornerAnim[0].setDuration(Motion.FAST_SPATIAL_MS);
+            cornerAnim[0].setInterpolator(Motion.FAST_SPATIAL);
+            cornerAnim[0].addUpdateListener(anim -> card.invalidateOutline());
+            cornerAnim[0].start();
+
+            ring.setCornerRadius(targetRadius + dp(RING));
             if (activeMove) {
+                if (ringAnim[0] != null) ringAnim[0].cancel();
                 ring.setColor(palette.primary);
+                ring.setStroke(0, Color.TRANSPARENT);
                 ring.setAlpha(255);
                 holder.setTranslationY(-dp(10));
             } else {
-                fadeRing(ring, focused);
+                fadeRing(ringAnim, ring, focused);
             }
             if (inDock) shiftNeighbors(holder, focused);
             caption.animate().cancel();
@@ -846,6 +899,7 @@ public class HomeActivity extends Activity {
             }
             caption.setTextColor(focused ? palette.onSurface : palette.onSurfaceVariant);
             if (focused) onTileFocused(pkg, label, art);
+            if (inDock && focused) card.post(() -> scrollDockToTile(holder));
         });
 
         // Status lives under the tile, never on the artwork: an equalizer for the app that's playing, a green dot for
@@ -894,11 +948,22 @@ public class HomeActivity extends Activity {
     }
 
     /** The focus ring fades in (fast effects) in the palette's focus color instead of snapping on. */
-    private void fadeRing(GradientDrawable ring, boolean focused) {
+    private void fadeRing(ValueAnimator[] ringAnim, GradientDrawable ring, boolean focused) {
+        if (ringAnim[0] != null) ringAnim[0].cancel();
         int color = palette.inverseSurface;
+        ring.setColor(Color.TRANSPARENT);
         ValueAnimator a = ValueAnimator.ofInt(focused ? 0 : 255, focused ? 255 : 0).setDuration(Motion.FAST_EFFECTS_MS);
         a.setInterpolator(Motion.FAST_EFFECTS);
-        a.addUpdateListener(an -> ring.setStroke(dp(3), (color & 0x00FFFFFF) | ((int) an.getAnimatedValue() << 24)));
+        a.addUpdateListener(an -> {
+            int alpha = (int) an.getAnimatedValue();
+            ring.setStroke(dp(3), (color & 0x00FFFFFF) | (alpha << 24));
+        });
+        a.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator animation) {
+                if (!focused) ring.setStroke(0, Color.TRANSPARENT);
+            }
+        });
+        ringAnim[0] = a;
         a.start();
     }
 
@@ -1060,7 +1125,12 @@ public class HomeActivity extends Activity {
             int bottom = (int) argb.evaluate(t, from.surface, next.surface);
             backdrop.setColors(new int[]{top, bottom});
             cookie.setColor((int) argb.evaluate(t, from.primaryContainer, next.primaryContainer));
-            dockShape.setColor(withAlpha((int) argb.evaluate(t, from.container, next.container), 0xB3));
+            int containerColor = (int) argb.evaluate(t, from.container, next.container);
+            dockShape.setColor(withAlpha(containerColor, 0xB3));
+            if (leftScrimShape != null && rightScrimShape != null) {
+                leftScrimShape.setColors(new int[]{withAlpha(containerColor, 0xF0), Color.TRANSPARENT});
+                rightScrimShape.setColors(new int[]{Color.TRANSPARENT, withAlpha(containerColor, 0xF0)});
+            }
         });
         colorAnimator.start();
         nav.setPalette(next);
@@ -1683,10 +1753,58 @@ public class HomeActivity extends Activity {
         View card = dock.findViewWithTag(targetPkg);
         if (card != null) {
             card.requestFocus();
-            if (scroller != null && card.getParent() != null && card.getParent().getParent() instanceof View) {
+            if (card.getParent() != null && card.getParent().getParent() instanceof View) {
                 View holder = (View) card.getParent().getParent();
-                scroller.requestChildFocus(holder, card);
+                scrollDockToTile(holder);
             }
+        }
+    }
+
+    private void updateScrollScrims() {
+        if (scroller == null || leftScrim == null || rightScrim == null) return;
+        boolean canLeft = scroller.canScrollHorizontally(-1);
+        boolean canRight = scroller.canScrollHorizontally(1);
+        leftScrim.animate().alpha(canLeft ? 1f : 0f).setDuration(Motion.FAST_EFFECTS_MS).start();
+        rightScrim.animate().alpha(canRight ? 1f : 0f).setDuration(Motion.FAST_EFFECTS_MS).start();
+    }
+
+    private void scrollDockToTile(View holder) {
+        if (scroller == null || !(holder.getParent() instanceof ViewGroup)) return;
+        if (holder.getWidth() <= 0 || scroller.getWidth() <= 0) {
+            holder.post(() -> scrollDockToTile(holder));
+            return;
+        }
+        ViewGroup row = (ViewGroup) holder.getParent();
+        int holderLeft = holder.getLeft();
+        int holderRight = holder.getRight();
+        int scrollerWidth = scroller.getWidth();
+        int scrollX = scroller.getScrollX();
+        int index = row.indexOfChild(holder);
+        int total = row.getChildCount();
+
+        int margin = dp(28);
+        int peek = dp(76);
+
+        int targetScroll = scrollX;
+        boolean hasNext = index < total - 1;
+        int requiredRight = holderRight + margin + (hasNext ? peek : 0);
+        int visibleRightBoundary = scrollX + scrollerWidth - scroller.getPaddingRight();
+        if (requiredRight > visibleRightBoundary) {
+            targetScroll = requiredRight - scrollerWidth + scroller.getPaddingRight();
+        }
+
+        boolean hasPrev = index > 0;
+        int requiredLeft = holderLeft - margin - (hasPrev ? peek : 0);
+        int visibleLeftBoundary = targetScroll + scroller.getPaddingLeft();
+        if (requiredLeft < visibleLeftBoundary) {
+            targetScroll = requiredLeft - scroller.getPaddingLeft();
+        }
+
+        int maxScroll = Math.max(0, row.getWidth() + scroller.getPaddingLeft() + scroller.getPaddingRight() - scrollerWidth);
+        targetScroll = Math.max(0, Math.min(targetScroll, maxScroll));
+
+        if (targetScroll != scrollX) {
+            scroller.smoothScrollTo(targetScroll, 0);
         }
     }
 
