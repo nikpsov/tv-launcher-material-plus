@@ -18,6 +18,7 @@ import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Outline;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -39,6 +40,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.view.animation.PathInterpolator;
 import android.view.inputmethod.EditorInfo;
 import android.widget.FrameLayout;
@@ -133,6 +135,9 @@ public class HomeActivity extends Activity {
     private String reorderingPkg;
     private View leftScrim, rightScrim;
     private GradientDrawable leftScrimShape, rightScrimShape;
+    private ValueAnimator dockScrollAnim;
+    private int dockScrollTarget = -1;
+    private String lastFocusedDockPkg;
 
     // Focus settles before the expensive part runs, so holding a direction stays smooth.
     private String pendingPkg;
@@ -312,6 +317,7 @@ public class HomeActivity extends Activity {
         shape.removeCallbacks(drift);
         handler.removeCallbacks(prebuildApps);
         if (colorAnimator != null) colorAnimator.end();
+        if (dockScrollAnim != null) dockScrollAnim.cancel();
         nav.stopAnimations();
         handler.removeCallbacks(settle);
         // The media session stays watched (it only updates fields, never views) so the card remembers what played
@@ -357,6 +363,21 @@ public class HomeActivity extends Activity {
             } else if (code == KeyEvent.KEYCODE_BACK) {
                 finishReordering(false);
                 return true;
+            }
+        }
+        if (!showingApps && event.getAction() == KeyEvent.ACTION_DOWN && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN) {
+            View current = getCurrentFocus();
+            if (current != null && isChildOf(current, nav)) {
+                if (lastFocusedDockPkg != null && dock != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
+                    focusTileForPkg(lastFocusedDockPkg);
+                    return true;
+                } else if (dock != null && dock.getChildCount() > 0) {
+                    View firstCard = cardFromHolder(dock.getChildAt(0));
+                    if (firstCard != null) {
+                        firstCard.requestFocus();
+                        return true;
+                    }
+                }
             }
         }
         return super.dispatchKeyEvent(event);
@@ -492,50 +513,61 @@ public class HomeActivity extends Activity {
                 super.onMeasure(widthMeasureSpec, exactHeightSpec);
             }
         };
-        dockFrame.setClipChildren(false);
+        dockFrame.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(40));
+            }
+        });
+        dockFrame.setClipToOutline(true);
         dockShape = new GradientDrawable();
         dockShape.setCornerRadius(dp(40));
         dockShape.setColor(withAlpha(palette.container, 0xB3));
         dockFrame.setBackground(dockShape);
-        dockFrame.setPadding(dp(DOCK_PAD), dp(6), dp(DOCK_PAD), dp(6));
+        dockFrame.setPadding(0, dp(6), 0, dp(6));
 
         scroller = new HorizontalScrollView(this) {
             @Override
+            public boolean arrowScroll(int direction) {
+                return false;
+            }
+
+            @Override
             public void requestChildFocus(View child, View focused) {
                 super.requestChildFocus(child, focused);
-                if (child != null) scrollDockToTile(child);
+                View holder = findTileHolder(focused);
+                if (holder != null) scrollDockToTile(holder);
             }
         };
         scroller.setHorizontalScrollBarEnabled(false);
         scroller.setSmoothScrollingEnabled(true);
         scroller.setClipToPadding(false);
         scroller.setClipChildren(false);
-        scroller.setPadding(dp(SCROLL_PAD), dp(20), dp(SCROLL_PAD), dp(16));
+        scroller.setPadding(dp(SCROLL_PAD + DOCK_PAD), dp(20), dp(SCROLL_PAD + DOCK_PAD), dp(16));
         dock = new LinearLayout(this);
         dock.setClipChildren(false);
         scroller.addView(dock);
         dockFrame.addView(scroller, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        float r = dp(40);
         leftScrimShape = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{withAlpha(palette.container, 0xF0), Color.TRANSPARENT});
-        leftScrimShape.setCornerRadii(new float[]{r, r, 0, 0, 0, 0, r, r});
         leftScrim = new View(this);
         leftScrim.setBackground(leftScrimShape);
         leftScrim.setFocusable(false);
         leftScrim.setClickable(false);
         leftScrim.setAlpha(0f);
-        dockFrame.addView(leftScrim, new FrameLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
+        leftScrim.setTranslationZ(dp(2));
+        dockFrame.addView(leftScrim, new FrameLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
 
         rightScrimShape = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{Color.TRANSPARENT, withAlpha(palette.container, 0xF0)});
-        rightScrimShape.setCornerRadii(new float[]{0, 0, r, r, r, r, 0, 0});
         rightScrim = new View(this);
         rightScrim.setBackground(rightScrimShape);
         rightScrim.setFocusable(false);
         rightScrim.setClickable(false);
         rightScrim.setAlpha(0f);
-        dockFrame.addView(rightScrim, new FrameLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
+        rightScrim.setTranslationZ(dp(2));
+        dockFrame.addView(rightScrim, new FrameLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
 
         scroller.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> updateScrollScrims());
 
@@ -704,7 +736,19 @@ public class HomeActivity extends Activity {
         }
         String key = TextUtils.join(",", present) + names;
         if (key.equals(dockKey) && dock.getChildCount() > 0) {
-            if (!showingApps && reorderingPkg == null) dock.getChildAt(0).requestFocus();
+            if (!showingApps && reorderingPkg == null) {
+                dock.post(() -> {
+                    if (!showingApps && dock != null && dock.getChildCount() > 0 && reorderingPkg == null) {
+                        if (lastFocusedDockPkg != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
+                            focusTileForPkg(lastFocusedDockPkg);
+                        } else {
+                            View firstCard = cardFromHolder(dock.getChildAt(0));
+                            if (firstCard != null) firstCard.requestFocus();
+                            else dock.getChildAt(0).requestFocus();
+                        }
+                    }
+                });
+            }
             return;
         }
         dockKey = key;
@@ -727,7 +771,37 @@ public class HomeActivity extends Activity {
             if (animate) arrive(tile, i);
             i++;
         }
-        if (!showingApps && dock.getChildCount() > 0 && reorderingPkg == null) dock.getChildAt(0).requestFocus();
+        int count = dock.getChildCount();
+        for (int j = 0; j < count; j++) {
+            View c = cardFromHolder(dock.getChildAt(j));
+            if (c == null) continue;
+            if (j > 0) {
+                View prev = cardFromHolder(dock.getChildAt(j - 1));
+                if (prev != null) c.setNextFocusLeftId(prev.getId());
+            } else {
+                c.setNextFocusLeftId(c.getId());
+            }
+            if (j < count - 1) {
+                View next = cardFromHolder(dock.getChildAt(j + 1));
+                if (next != null) c.setNextFocusRightId(next.getId());
+            } else {
+                c.setNextFocusRightId(c.getId());
+            }
+            c.setNextFocusDownId(c.getId());
+        }
+        if (!showingApps && dock.getChildCount() > 0 && reorderingPkg == null) {
+            dock.post(() -> {
+                if (!showingApps && dock != null && dock.getChildCount() > 0 && reorderingPkg == null) {
+                    if (lastFocusedDockPkg != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
+                        focusTileForPkg(lastFocusedDockPkg);
+                    } else {
+                        View firstCard = cardFromHolder(dock.getChildAt(0));
+                        if (firstCard != null) firstCard.requestFocus();
+                        else dock.getChildAt(0).requestFocus();
+                    }
+                }
+            });
+        }
         updateBadges();
         dock.post(this::updateScrollScrims);
     }
@@ -795,6 +869,7 @@ public class HomeActivity extends Activity {
         final Drawable art = banner != null ? banner : icon;
 
         FrameLayout card = new FrameLayout(this);
+        card.setId(View.generateViewId());
         card.setFocusable(true);
         card.setClickable(true);
         card.setTag(pkg);
@@ -886,7 +961,6 @@ public class HomeActivity extends Activity {
             } else {
                 fadeRing(ringAnim, ring, focused);
             }
-            if (inDock) shiftNeighbors(holder, focused);
             caption.animate().cancel();
             if (inDock && focused) {
                 caption.setVisibility(View.VISIBLE);
@@ -899,7 +973,10 @@ public class HomeActivity extends Activity {
             }
             caption.setTextColor(focused ? palette.onSurface : palette.onSurfaceVariant);
             if (focused) onTileFocused(pkg, label, art);
-            if (inDock && focused) card.post(() -> scrollDockToTile(holder));
+            if (inDock && focused) {
+                lastFocusedDockPkg = pkg;
+                scrollDockToTile(holder);
+            }
         });
 
         // Status lives under the tile, never on the artwork: an equalizer for the app that's playing, a green dot for
@@ -965,19 +1042,6 @@ public class HomeActivity extends Activity {
         });
         ringAnim[0] = a;
         a.start();
-    }
-
-    /** Standard button-group behavior on the dock: the neighbors of the focused tile make a little room. */
-    private void shiftNeighbors(View holder, boolean focused) {
-        if (!(holder.getParent() instanceof ViewGroup)) return;
-        ViewGroup row = (ViewGroup) holder.getParent();
-        int at = row.indexOfChild(holder);
-        for (int i = 0; i < row.getChildCount(); i++) {
-            float dx = !focused ? 0 : i == at - 1 ? -dp(8) : i == at + 1 ? dp(8) : 0;
-            if (!focused && i != at - 1 && i != at + 1) continue;
-            row.getChildAt(i).animate().translationX(dx)
-                    .setInterpolator(Motion.DEFAULT_SPATIAL).setDuration(Motion.DEFAULT_SPATIAL_MS).start();
-        }
     }
 
     private View activeLoader;
@@ -1157,7 +1221,15 @@ public class HomeActivity extends Activity {
         homePage.setVisibility(View.VISIBLE);
         nav.select(0);
         if (nowCard != null) showNowPlaying();
-        if (dock.getChildCount() > 0) dock.getChildAt(0).requestFocus();
+        if (dock != null && dock.getChildCount() > 0) {
+            if (lastFocusedDockPkg != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
+                focusTileForPkg(lastFocusedDockPkg);
+            } else {
+                View firstCard = cardFromHolder(dock.getChildAt(0));
+                if (firstCard != null) firstCard.requestFocus();
+                else dock.getChildAt(0).requestFocus();
+            }
+        }
     }
 
     private void showApps() {
@@ -1753,11 +1825,39 @@ public class HomeActivity extends Activity {
         View card = dock.findViewWithTag(targetPkg);
         if (card != null) {
             card.requestFocus();
-            if (card.getParent() != null && card.getParent().getParent() instanceof View) {
-                View holder = (View) card.getParent().getParent();
-                scrollDockToTile(holder);
-            }
+            View holder = findTileHolder(card);
+            if (holder != null) scrollDockToTile(holder);
         }
+    }
+
+    private View findTileHolder(View view) {
+        View v = view;
+        while (v != null && v != dock) {
+            if (v.getParent() == dock) return v;
+            if (!(v.getParent() instanceof View)) break;
+            v = (View) v.getParent();
+        }
+        return null;
+    }
+
+    private View cardFromHolder(View holder) {
+        if (!(holder instanceof ViewGroup)) return null;
+        ViewGroup vg = (ViewGroup) holder;
+        if (vg.getChildCount() > 0 && vg.getChildAt(0) instanceof ViewGroup) {
+            ViewGroup ring = (ViewGroup) vg.getChildAt(0);
+            if (ring.getChildCount() > 0) return ring.getChildAt(0);
+        }
+        return null;
+    }
+
+    private boolean isChildOf(View view, View parent) {
+        View v = view;
+        while (v != null) {
+            if (v == parent) return true;
+            if (!(v.getParent() instanceof View)) break;
+            v = (View) v.getParent();
+        }
+        return false;
     }
 
     private void updateScrollScrims() {
@@ -1769,43 +1869,67 @@ public class HomeActivity extends Activity {
     }
 
     private void scrollDockToTile(View holder) {
-        if (scroller == null || !(holder.getParent() instanceof ViewGroup)) return;
-        if (holder.getWidth() <= 0 || scroller.getWidth() <= 0) {
-            holder.post(() -> scrollDockToTile(holder));
+        if (scroller == null || dock == null || holder == null) return;
+        View actualHolder = findTileHolder(holder);
+        if (actualHolder == null) return;
+        if (actualHolder.getWidth() <= 0 || scroller.getWidth() <= 0) {
+            actualHolder.post(() -> scrollDockToTile(actualHolder));
             return;
         }
-        ViewGroup row = (ViewGroup) holder.getParent();
-        int holderLeft = holder.getLeft();
-        int holderRight = holder.getRight();
+
+        int index = dock.indexOfChild(actualHolder);
+        int total = dock.getChildCount();
+        if (index < 0 || total == 0) return;
+
+        int holderLeft = actualHolder.getLeft();
+        int holderRight = actualHolder.getRight();
         int scrollerWidth = scroller.getWidth();
+        int padLeft = scroller.getPaddingLeft();
+        int padRight = scroller.getPaddingRight();
+        int viewWidth = scrollerWidth - padLeft - padRight;
+        if (viewWidth <= 0) return;
+
         int scrollX = scroller.getScrollX();
-        int index = row.indexOfChild(holder);
-        int total = row.getChildCount();
+        int viewLeft = scrollX;
+        int viewRight = scrollX + viewWidth;
 
         int margin = dp(28);
         int peek = dp(76);
 
         int targetScroll = scrollX;
         boolean hasNext = index < total - 1;
-        int requiredRight = holderRight + margin + (hasNext ? peek : 0);
-        int visibleRightBoundary = scrollX + scrollerWidth - scroller.getPaddingRight();
-        if (requiredRight > visibleRightBoundary) {
-            targetScroll = requiredRight - scrollerWidth + scroller.getPaddingRight();
+        int neededRight = holderRight + margin + (hasNext ? peek : 0);
+        if (neededRight > viewRight) {
+            targetScroll += (neededRight - viewRight);
         }
 
         boolean hasPrev = index > 0;
-        int requiredLeft = holderLeft - margin - (hasPrev ? peek : 0);
-        int visibleLeftBoundary = targetScroll + scroller.getPaddingLeft();
-        if (requiredLeft < visibleLeftBoundary) {
-            targetScroll = requiredLeft - scroller.getPaddingLeft();
+        int neededLeft = holderLeft - margin - (hasPrev ? peek : 0);
+        if (neededLeft < viewLeft) {
+            targetScroll += (neededLeft - viewLeft);
         }
 
-        int maxScroll = Math.max(0, row.getWidth() + scroller.getPaddingLeft() + scroller.getPaddingRight() - scrollerWidth);
+        int maxScroll = Math.max(0, dock.getWidth() - viewWidth);
         targetScroll = Math.max(0, Math.min(targetScroll, maxScroll));
 
-        if (targetScroll != scrollX) {
-            scroller.smoothScrollTo(targetScroll, 0);
+        if (targetScroll == scrollX && (dockScrollAnim == null || !dockScrollAnim.isRunning())) {
+            dockScrollTarget = targetScroll;
+            return;
         }
+
+        if (dockScrollAnim != null && dockScrollAnim.isRunning() && dockScrollTarget == targetScroll) {
+            return;
+        }
+
+        dockScrollTarget = targetScroll;
+        if (dockScrollAnim != null) dockScrollAnim.cancel();
+        dockScrollAnim = ValueAnimator.ofInt(scroller.getScrollX(), targetScroll);
+        dockScrollAnim.setDuration(Motion.FAST_SPATIAL_MS);
+        dockScrollAnim.setInterpolator(Motion.FAST_SPATIAL);
+        dockScrollAnim.addUpdateListener(a -> {
+            if (scroller != null) scroller.scrollTo((int) a.getAnimatedValue(), 0);
+        });
+        dockScrollAnim.start();
     }
 
     // ---- motion ----
