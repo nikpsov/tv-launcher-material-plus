@@ -4,6 +4,7 @@ import android.animation.ArgbEvaluator;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
@@ -46,6 +47,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Space;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -484,6 +486,11 @@ public class HomeActivity extends Activity {
     /** The dock: most-used apps of the last 14 days (left = most used), topped up from the TV's other installed apps. */
     private List<String> dockApps() {
         List<String> out = new ArrayList<>();
+        for (String p : PinnedApps.load(this)) {
+            if (launchIntent(p) != null && !p.equals(getPackageName()) && !out.contains(p)) {
+                out.add(p);
+            }
+        }
         // Screensaver apps rack up "use" while the screensaver runs: they never count toward the dock.
         java.util.Set<String> screensavers = new java.util.HashSet<>();
         for (ResolveInfo r : pm.queryIntentServices(new Intent("android.service.dreams.DreamService"), 0))
@@ -496,7 +503,7 @@ public class HomeActivity extends Activity {
             for (android.app.usage.UsageStats u : used) {
                 if (out.size() >= DOCK_SIZE || u.getTotalTimeInForeground() < 60_000) break;
                 String pkg = u.getPackageName();
-                if (pkg.equals(getPackageName()) || NOT_IN_DOCK.contains(pkg) || screensavers.contains(pkg) || launchIntent(pkg) == null) continue;
+                if (out.contains(pkg) || pkg.equals(getPackageName()) || NOT_IN_DOCK.contains(pkg) || screensavers.contains(pkg) || launchIntent(pkg) == null) continue;
                 out.add(pkg);
             }
         } catch (RuntimeException ignored) {
@@ -540,6 +547,7 @@ public class HomeActivity extends Activity {
                 out.add(pkg);
             }
         }
+        while (out.size() > DOCK_SIZE) out.remove(out.size() - 1);
         return out;
     }
 
@@ -751,6 +759,12 @@ public class HomeActivity extends Activity {
         loader.setVisibility(View.GONE);
         ringFrame.addView(loader, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER));
         card.setOnClickListener(v -> pressAndLaunch(ringFrame, loader, loaderShape, intent));
+        if (!inDock) {
+            card.setOnLongClickListener(v -> {
+                showPinDialog(pkg);
+                return true;
+            });
+        }
 
         TextView caption = text(label, inDock ? 15 : 14, palette.onSurfaceVariant, 560);
         caption.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -1515,6 +1529,20 @@ public class HomeActivity extends Activity {
         } catch (PackageManager.NameNotFoundException e) {
             return "";
         }
+    }
+
+    private void showPinDialog(String pkg) {
+        if (PinnedApps.isPinned(this, pkg)) return;
+        CharSequence label = appLabel(pkg);
+        new AlertDialog.Builder(this)
+                .setTitle(label)
+                .setItems(new String[]{"Закрепить на главном экране"}, (d, which) -> {
+                    PinnedApps.pin(this, pkg);
+                    dockKey = "";
+                    fillDock();
+                    Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                })
+                .show();
     }
 
     // ---- motion ----
