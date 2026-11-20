@@ -122,6 +122,7 @@ public class HomeActivity extends Activity {
     private View homePage;
     private ScrollView appsPage;
     private GridLayout appsGrid;
+    private HorizontalScrollView scroller;
     private LinearLayout dock;
     private TextView clock;
     private TextView date;
@@ -462,8 +463,9 @@ public class HomeActivity extends Activity {
         dockFrame.setBackground(dockShape);
         dockFrame.setPadding(dp(DOCK_PAD), dp(6), dp(DOCK_PAD), dp(6));
 
-        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setSmoothScrollingEnabled(true);
         scroller.setClipToPadding(false);
         scroller.setClipChildren(false);
         scroller.setPadding(dp(SCROLL_PAD), dp(20), dp(SCROLL_PAD), dp(16));
@@ -477,13 +479,13 @@ public class HomeActivity extends Activity {
 
     // ---- content ----
 
-    private static final int DOCK_SIZE = 6;
+    private static final int MIN_DOCK_SIZE = 6;
     /** Never in the dock: settings, the stock home screen and system helpers. */
     private static final java.util.Set<String> NOT_IN_DOCK = new java.util.HashSet<>(java.util.Arrays.asList(
             "com.android.tv.settings", "com.google.android.apps.tv.launcherx", "com.google.android.tungsten.setupwraith",
             "com.google.android.katniss", "com.android.vending", "com.android.systemui"));
 
-    /** The dock: most-used apps of the last 14 days (left = most used), topped up from the TV's other installed apps. */
+    /** The dock: pinned apps followed by most-used apps of the last 14 days, topped up from installed apps. */
     private List<String> dockApps() {
         List<String> out = new ArrayList<>();
         for (String p : PinnedApps.load(this)) {
@@ -501,7 +503,7 @@ public class HomeActivity extends Activity {
             List<android.app.usage.UsageStats> used = new ArrayList<>(usm.queryAndAggregateUsageStats(now - 14L * 86_400_000L, now).values());
             used.sort((a, b) -> Long.compare(b.getTotalTimeInForeground(), a.getTotalTimeInForeground()));
             for (android.app.usage.UsageStats u : used) {
-                if (out.size() >= DOCK_SIZE || u.getTotalTimeInForeground() < 60_000) break;
+                if (u.getTotalTimeInForeground() < 60_000) break;
                 String pkg = u.getPackageName();
                 if (out.contains(pkg) || pkg.equals(getPackageName()) || NOT_IN_DOCK.contains(pkg) || screensavers.contains(pkg) || launchIntent(pkg) == null) continue;
                 out.add(pkg);
@@ -516,14 +518,13 @@ public class HomeActivity extends Activity {
         if (at >= 0 && !devices.isEmpty()) {
             out.remove(at);
             out.addAll(at, devices);
-            while (out.size() > DOCK_SIZE) out.remove(out.size() - 1);
         } else if (!devices.isEmpty()) {
-            // Not used much yet (a fresh TV): consoles still get a tile when there's room.
-            for (String d : devices) if (out.size() < DOCK_SIZE) out.add(d);
+            // Fresh TV: consoles still get a tile when there's room.
+            for (String d : devices) if (!out.contains(d)) out.add(d);
         }
         boolean devicesShown = !devices.isEmpty() && out.contains(devices.get(0));
-        // Top up from this TV's own installed apps: most recently used first, then the newest installs.
-        if (out.size() < DOCK_SIZE) {
+        // Top up to MIN_DOCK_SIZE from this TV's own installed apps: most recently used first, then the newest installs.
+        if (out.size() < MIN_DOCK_SIZE) {
             java.util.Map<String, Long> lastUsed = new java.util.HashMap<>();
             try {
                 android.app.usage.UsageStatsManager usm = getSystemService(android.app.usage.UsageStatsManager.class);
@@ -543,11 +544,10 @@ public class HomeActivity extends Activity {
                 return byUse != 0 ? byUse : Long.compare(installTime(b), installTime(a));
             });
             for (String pkg : rest) {
-                if (out.size() >= DOCK_SIZE) break;
+                if (out.size() >= MIN_DOCK_SIZE) break;
                 out.add(pkg);
             }
         }
-        while (out.size() > DOCK_SIZE) out.remove(out.size() - 1);
         return out;
     }
 
@@ -644,8 +644,9 @@ public class HomeActivity extends Activity {
         warmPalettes(present);
         int n = Math.max(1, present.size());
         float screenDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
-        float inner = screenDp - 2 * (SIDE + DOCK_PAD + SCROLL_PAD) - (n - 1) * GAP - n * 2 * RING;
-        int tileDp = (int) Math.max(96, Math.min(220, inner / n));
+        int countForSize = Math.min(6, n);
+        float inner = screenDp - 2 * (SIDE + DOCK_PAD + SCROLL_PAD) - (countForSize - 1) * GAP - countForSize * 2 * RING;
+        int tileDp = (int) Math.max(96, Math.min(220, inner / countForSize));
         int i = 0;
         for (String pkg : present) {
             Intent intent = dockIntent(pkg);
