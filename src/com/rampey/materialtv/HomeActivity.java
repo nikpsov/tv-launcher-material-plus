@@ -764,7 +764,7 @@ public class HomeActivity extends Activity {
         card.setOnClickListener(v -> pressAndLaunch(ringFrame, loader, loaderShape, intent));
         card.setOnLongClickListener(v -> {
             if (inDock) showDockContextMenu(pkg, label);
-            else showPinDialog(pkg);
+            else showAppsContextMenu(pkg);
             return true;
         });
 
@@ -1525,16 +1525,24 @@ public class HomeActivity extends Activity {
         }
     }
 
-    private void showPinDialog(String pkg) {
-        if (PinnedApps.isPinned(this, pkg)) return;
+    private void showAppsContextMenu(String pkg) {
+        boolean pinned = PinnedApps.isPinned(this, pkg);
         CharSequence label = appLabel(pkg);
+        String actionText = pinned ? "Открепить от главного экрана" : "Закрепить на главном экране";
         new AlertDialog.Builder(this)
                 .setTitle(label)
-                .setItems(new String[]{"Закрепить на главном экране"}, (d, which) -> {
-                    PinnedApps.pin(this, pkg);
-                    dockKey = "";
-                    fillDock();
-                    Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                .setItems(new String[]{actionText}, (d, which) -> {
+                    if (pinned) {
+                        PinnedApps.unpin(this, pkg);
+                        dockKey = "";
+                        fillDock();
+                        Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
+                    } else {
+                        PinnedApps.pin(this, pkg);
+                        dockKey = "";
+                        fillDock();
+                        Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                    }
                 })
                 .show();
     }
