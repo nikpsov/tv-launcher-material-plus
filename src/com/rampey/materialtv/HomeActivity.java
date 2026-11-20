@@ -256,7 +256,8 @@ public class HomeActivity extends Activity {
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             Date now = new Date();
-            String time = new SimpleDateFormat("h:mm", Locale.getDefault()).format(now);
+            boolean is24 = android.text.format.DateFormat.is24HourFormat(HomeActivity.this);
+            String time = new SimpleDateFormat(is24 ? "H:mm" : "h:mm", Locale.getDefault()).format(now);
             if (clock.getText().length() == 0) {
                 clock.setText(time);
                 clock.setTypeface(clockFont(clockWeight()));
