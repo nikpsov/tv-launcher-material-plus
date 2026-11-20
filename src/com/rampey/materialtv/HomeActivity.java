@@ -759,12 +759,11 @@ public class HomeActivity extends Activity {
         loader.setVisibility(View.GONE);
         ringFrame.addView(loader, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER));
         card.setOnClickListener(v -> pressAndLaunch(ringFrame, loader, loaderShape, intent));
-        if (!inDock) {
-            card.setOnLongClickListener(v -> {
-                showPinDialog(pkg);
-                return true;
-            });
-        }
+        card.setOnLongClickListener(v -> {
+            if (inDock) showDockContextMenu(pkg, label);
+            else showPinDialog(pkg);
+            return true;
+        });
 
         TextView caption = text(label, inDock ? 15 : 14, palette.onSurfaceVariant, 560);
         caption.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -1543,6 +1542,70 @@ public class HomeActivity extends Activity {
                     Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
                 })
                 .show();
+    }
+
+    private void showDockContextMenu(String pkg, CharSequence label) {
+        if (pkg != null && pkg.startsWith("input:")) return;
+        boolean pinned = PinnedApps.isPinned(this, pkg);
+        if (pinned) {
+            List<String> allPinned = PinnedApps.load(this);
+            boolean canReorder = allPinned.size() > 1;
+            String[] items = canReorder
+                    ? new String[]{"Открепить", "Переместить"}
+                    : new String[]{"Открепить"};
+            new AlertDialog.Builder(this)
+                    .setTitle(label)
+                    .setItems(items, (d, which) -> {
+                        if (which == 0) unpinApp(pkg, label);
+                        else showReorderDialog(pkg);
+                    }).show();
+        } else {
+            new AlertDialog.Builder(this)
+                    .setTitle(label)
+                    .setItems(new String[]{"Закрепить на главном экране"}, (d, which) -> {
+                        PinnedApps.pin(this, pkg);
+                        dockKey = "";
+                        fillDock();
+                        Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                    }).show();
+        }
+    }
+
+    private void unpinApp(String pkg, CharSequence label) {
+        PinnedApps.unpin(this, pkg);
+        dockKey = "";
+        fillDock();
+        Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
+    }
+
+    private void showReorderDialog(String pkg) {
+        List<String> pinned = PinnedApps.load(this);
+        if (pinned.size() < 2) return;
+        List<String> options = new ArrayList<>();
+        List<String> targets = new ArrayList<>();
+        for (String p : pinned) {
+            if (!p.equals(pkg)) {
+                CharSequence targetLabel = appLabel(p);
+                options.add("Перед «" + (targetLabel.length() > 0 ? targetLabel : p) + "»");
+                targets.add(p);
+            }
+        }
+        options.add("В конец");
+        CharSequence curLabel = appLabel(pkg);
+        new AlertDialog.Builder(this)
+                .setTitle("Переместить «" + (curLabel.length() > 0 ? curLabel : pkg) + "»")
+                .setItems(options.toArray(new String[0]), (d, which) -> {
+                    pinned.remove(pkg);
+                    if (which < targets.size()) {
+                        int pos = pinned.indexOf(targets.get(which));
+                        pinned.add(pos, pkg);
+                    } else {
+                        pinned.add(pkg);
+                    }
+                    PinnedApps.save(this, pinned);
+                    dockKey = "";
+                    fillDock();
+                }).show();
     }
 
     // ---- motion ----
