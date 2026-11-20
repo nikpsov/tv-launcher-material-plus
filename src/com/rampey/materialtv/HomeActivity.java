@@ -29,7 +29,13 @@ import android.media.tv.TvInputManager;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -138,6 +144,12 @@ public class HomeActivity extends Activity {
     private ValueAnimator dockScrollAnim;
     private int dockScrollTarget = -1;
     private String lastFocusedDockPkg;
+    private View wifiPill;
+    private TextView wifiButton;
+    private GradientDrawable wifiStrip;
+    private GradientDrawable wifiBg;
+    private boolean wifiConnected;
+    private ConnectivityManager.NetworkCallback wifiCallback;
 
     // Focus settles before the expensive part runs, so holding a direction stays smooth.
     private String pendingPkg;
@@ -284,6 +296,7 @@ public class HomeActivity extends Activity {
         pm = getPackageManager();
         titleFont(820);
         setContentView(buildRoot());
+        registerWifiCallback();
     }
 
     @Override protected void onResume() {
@@ -291,6 +304,7 @@ public class HomeActivity extends Activity {
         if (pendingResume != null) { pendingResume.cancel(); pendingResume = null; }
         fillDock();
         if (showingApps) fillApps();
+        updateWifiState();
         handler.removeCallbacks(tick);
         handler.post(tick);
         drifting = true;
@@ -333,6 +347,14 @@ public class HomeActivity extends Activity {
         if (pendingResume != null) pendingResume.cancel();
         if (liveHome.get() == this) liveHome.clear();
         stopNowPlaying();
+        if (wifiCallback != null) {
+            try {
+                ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+                if (cm != null) cm.unregisterNetworkCallback(wifiCallback);
+            } catch (RuntimeException ignored) {
+            }
+            wifiCallback = null;
+        }
         handler.removeCallbacks(expire);
         handler.removeCallbacks(checkResumed);
         super.onDestroy();
@@ -367,7 +389,7 @@ public class HomeActivity extends Activity {
         }
         if (!showingApps && event.getAction() == KeyEvent.ACTION_DOWN && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN) {
             View current = getCurrentFocus();
-            if (current != null && isChildOf(current, nav)) {
+            if (current != null && (isChildOf(current, nav) || isChildOf(current, wifiPill))) {
                 if (lastFocusedDockPkg != null && dock != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
                     focusTileForPkg(lastFocusedDockPkg);
                     return true;
@@ -468,7 +490,7 @@ public class HomeActivity extends Activity {
         bar.addView(when, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.TOP));
 
         nav = new ButtonGroup(this, font(600), palette,
-                new String[]{"Home", "Apps", "Settings"},
+                new String[]{"Главная", "Приложения", "Настройки"},
                 new int[]{R.drawable.ic_home, R.drawable.ic_apps, R.drawable.ic_settings},
                 new boolean[]{true, true, false},
                 index -> {
@@ -483,8 +505,188 @@ public class HomeActivity extends Activity {
                     }
                 });
         nav.select(0);
-        bar.addView(nav, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END | Gravity.TOP));
+
+        LinearLayout topEndRow = new LinearLayout(this);
+        topEndRow.setOrientation(LinearLayout.HORIZONTAL);
+        topEndRow.setGravity(Gravity.CENTER_VERTICAL);
+        topEndRow.setClipChildren(false);
+        topEndRow.setClipToPadding(false);
+
+        topEndRow.addView(nav, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        Space tabGap = new Space(this);
+        topEndRow.addView(tabGap, new LinearLayout.LayoutParams(dp(12), 1));
+
+        wifiPill = buildWifiPill();
+        topEndRow.addView(wifiPill, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        bar.addView(topEndRow, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END | Gravity.TOP));
+
+        TextView settingsBtn = nav.getButton(2);
+        if (settingsBtn != null && wifiButton != null) {
+            settingsBtn.setNextFocusRightId(wifiButton.getId());
+            wifiButton.setNextFocusLeftId(settingsBtn.getId());
+            wifiButton.setNextFocusRightId(wifiButton.getId());
+            wifiButton.setNextFocusUpId(wifiButton.getId());
+        }
         return bar;
+    }
+
+    private View buildWifiPill() {
+        FrameLayout pill = new FrameLayout(this);
+        pill.setClipChildren(false);
+        pill.setClipToPadding(false);
+        wifiStrip = new GradientDrawable();
+        wifiStrip.setCornerRadius(dp(30));
+        wifiStrip.setColor((palette.container & 0x00FFFFFF) | 0xE6000000);
+        pill.setBackground(wifiStrip);
+        pill.setPadding(dp(5), dp(5), dp(5), dp(5));
+
+        wifiButton = new TextView(this);
+        wifiButton.setId(View.generateViewId());
+        wifiButton.setTypeface(font(600));
+        wifiButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        wifiButton.setGravity(Gravity.CENTER);
+        wifiButton.setPadding(dp(18), dp(11), dp(20), dp(11));
+        wifiButton.setFocusable(true);
+        wifiButton.setClickable(true);
+        wifiButton.setSingleLine(true);
+        wifiButton.setEllipsize(TextUtils.TruncateAt.END);
+        wifiButton.setMaxWidth(dp(220));
+
+        Drawable icon = getDrawable(R.drawable.ic_wifi);
+        if (icon != null) {
+            icon.setBounds(0, 0, dp(18), dp(18));
+            wifiButton.setCompoundDrawablesRelative(icon, null, null, null);
+            wifiButton.setCompoundDrawablePadding(dp(8));
+        }
+
+        wifiBg = new GradientDrawable();
+        wifiBg.setCornerRadius(dp(24));
+        wifiBg.setColor(Color.TRANSPARENT);
+        wifiButton.setBackground(wifiBg);
+
+        wifiButton.setOnFocusChangeListener((v, focused) -> {
+            v.animate().scaleX(focused ? 1.05f : 1f).scaleY(focused ? 1.05f : 1f)
+                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
+            restyleWifiButton(focused);
+        });
+
+        wifiButton.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
+            } catch (ActivityNotFoundException e1) {
+                try {
+                    startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS));
+                } catch (ActivityNotFoundException e2) {
+                    try {
+                        startActivity(new Intent(Settings.ACTION_SETTINGS));
+                    } catch (ActivityNotFoundException e3) {
+                        launch(new Intent(this, TvControlActivity.class));
+                    }
+                }
+            }
+        });
+
+        pill.addView(wifiButton, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return pill;
+    }
+
+    private void restyleWifiButton(boolean focused) {
+        if (wifiButton == null || wifiBg == null) return;
+        int fill = focused ? palette.inverseSurface : Color.TRANSPARENT;
+        wifiBg.setColor(fill);
+        int ink;
+        if (focused) {
+            ink = palette.inverseOnSurface;
+        } else if (wifiConnected) {
+            ink = palette.onSurfaceVariant;
+        } else {
+            ink = 0xFF8E9192;
+        }
+        wifiButton.setTextColor(ink);
+        for (Drawable d : wifiButton.getCompoundDrawablesRelative()) {
+            if (d != null) d.setTintList(ColorStateList.valueOf(ink));
+        }
+    }
+
+    private void setWifiPillState(boolean connected, String text) {
+        wifiConnected = connected;
+        if (wifiButton != null) {
+            wifiButton.setText(text);
+            restyleWifiButton(wifiButton.hasFocus());
+        }
+    }
+
+    private void updateWifiState() {
+        boolean connected = false;
+        String ssid = null;
+        try {
+            ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+            if (cm != null) {
+                Network net = cm.getActiveNetwork();
+                if (net != null) {
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+                    if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        connected = true;
+                        if (android.os.Build.VERSION.SDK_INT >= 29) {
+                            android.net.TransportInfo ti = caps.getTransportInfo();
+                            if (ti instanceof WifiInfo) {
+                                ssid = ((WifiInfo) ti).getSSID();
+                            }
+                        }
+                    }
+                }
+            }
+            if (connected && (ssid == null || ssid.isEmpty() || "<unknown ssid>".equals(ssid))) {
+                WifiManager wm = getSystemService(WifiManager.class);
+                if (wm != null) {
+                    WifiInfo wi = wm.getConnectionInfo();
+                    if (wi != null) {
+                        String s = wi.getSSID();
+                        if (s != null && !s.isEmpty() && !"<unknown ssid>".equals(s)) {
+                            ssid = s;
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+
+        if (ssid != null && ssid.startsWith("\"") && ssid.endsWith("\"") && ssid.length() >= 2) {
+            ssid = ssid.substring(1, ssid.length() - 1);
+        }
+
+        if (!connected) {
+            setWifiPillState(false, "не подключено");
+        } else if (ssid != null && !ssid.isEmpty() && !"<unknown ssid>".equals(ssid)) {
+            setWifiPillState(true, ssid);
+        } else {
+            setWifiPillState(true, "Wi-Fi");
+        }
+    }
+
+    private void registerWifiCallback() {
+        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        if (cm == null) return;
+        NetworkRequest req = new NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .build();
+        wifiCallback = new ConnectivityManager.NetworkCallback() {
+            @Override public void onAvailable(Network network) {
+                handler.post(() -> updateWifiState());
+            }
+            @Override public void onLost(Network network) {
+                handler.post(() -> updateWifiState());
+            }
+            @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities networkCapabilities) {
+                handler.post(() -> updateWifiState());
+            }
+        };
+        try {
+            cm.registerNetworkCallback(req, wifiCallback);
+        } catch (RuntimeException ignored) {
+        }
     }
 
     private View buildHomePage() {
@@ -1198,6 +1400,10 @@ public class HomeActivity extends Activity {
         });
         colorAnimator.start();
         nav.setPalette(next);
+        if (wifiStrip != null) {
+            wifiStrip.setColor((next.container & 0x00FFFFFF) | 0xE6000000);
+        }
+        restyleWifiButton(wifiButton != null && wifiButton.hasFocus());
         styleNowPlaying();
     }
 

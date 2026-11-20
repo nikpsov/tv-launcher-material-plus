@@ -84,6 +84,11 @@ final class ButtonGroup extends LinearLayout {
         if (index >= 0) restyle(index, true);
     }
 
+    TextView getButton(int index) {
+        if (index >= 0 && index < buttons.size()) return buttons.get(index);
+        return null;
+    }
+
     void setPalette(Palette p) {
         palette = p;
         if (stripAnimator != null) stripAnimator.cancel();

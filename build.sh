@@ -25,7 +25,7 @@ rm -rf "$OUT"; mkdir -p "$OUT/res" "$OUT/gen" "$OUT/classes" "$OUT/dex"
   --version-code "${VERSION_CODE:-219}" --version-name "${VERSION_NAME:-0.2.0}" "$OUT/res/compiled.zip"
 
 # JDK core classes (for lambdas) plus android.jar for the Android API; d8 desugars to the TV's level.
-if ! javac -nowarn --release 17 -cp "$JAR" -d "$OUT/classes" $(find src third_party "$OUT/gen" -name '*.java') 2> "$OUT/javac.log"; then
+if ! javac -encoding UTF-8 -nowarn --release 17 -cp "$JAR" -d "$OUT/classes" $(find src third_party "$OUT/gen" -name '*.java') 2> "$OUT/javac.log"; then
   cat "$OUT/javac.log"; echo "javac failed"; exit 1
 fi
 
