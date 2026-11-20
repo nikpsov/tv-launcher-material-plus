@@ -51,7 +51,7 @@ nav fill with `inverseSurface` on focus.
 name settles into its weight; the clock's weight follows the time of day and swells briefly on each new minute.
 
 **Components**: top-bar strip (`ButtonGroup`: 30 dp outer radius, 5 dp padding, 4 dp tab gaps, 24 dp tab radii).
-The selected page has a `primary/onPrimary` pill; focused tabs use `inverseSurface/inverseOnSurface` and scale 1.05;
+The selected page has a `containerHigh/primary` pill; focused tabs use `inverseSurface/inverseOnSurface`;
 inactive tabs are transparent. Fills fade as focus and selection change. Now Playing uses a wavy progress indicator
 (`WavyProgress`: moving wave while playing, flat when paused, grows in from a flat line); a morphing shape loader
 appears when an app takes over 300 ms to open.

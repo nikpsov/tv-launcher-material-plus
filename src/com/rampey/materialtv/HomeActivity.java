@@ -458,7 +458,7 @@ public class HomeActivity extends Activity {
         LinearLayout appsColumn = new LinearLayout(this);
         appsColumn.setOrientation(LinearLayout.VERTICAL);
         appsColumn.setClipChildren(false);
-        TextView appsTitle = text("All apps", 34, palette.onSurface, 760);
+        TextView appsTitle = text("Все приложения", 34, palette.onSurface, 760);
         appsTitle.setPadding(dp(4), dp(28), 0, dp(8));
         appsColumn.addView(appsTitle);
         appsGrid = new GridLayout(this);

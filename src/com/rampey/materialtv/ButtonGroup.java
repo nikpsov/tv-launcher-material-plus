@@ -63,8 +63,6 @@ final class ButtonGroup extends LinearLayout {
             }
             b.setOnClickListener(v -> listener.onPick(index));
             b.setOnFocusChangeListener((v, focused) -> {
-                v.animate().scaleX(focused ? 1.05f : 1f).scaleY(focused ? 1.05f : 1f)
-                        .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
                 restyle(index, true);
             });
             LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
@@ -122,8 +120,8 @@ final class ButtonGroup extends LinearLayout {
         TextView b = buttons.get(index);
         boolean focused = b.hasFocus();
         boolean on = index == selected && selectable[index];
-        int fill = focused ? palette.inverseSurface : on ? palette.primary : Color.TRANSPARENT;
-        int ink = focused ? palette.inverseOnSurface : on ? palette.onPrimary : palette.onSurfaceVariant;
+        int fill = focused ? palette.inverseSurface : on ? palette.containerHigh : Color.TRANSPARENT;
+        int ink = focused ? palette.inverseOnSurface : on ? palette.primary : palette.onSurfaceVariant;
         b.setTextColor(ink);
         for (Drawable d : b.getCompoundDrawablesRelative()) if (d != null) d.setTintList(ColorStateList.valueOf(ink));
         GradientDrawable bg = b.getBackground() instanceof GradientDrawable ? (GradientDrawable) b.getBackground() : null;
@@ -165,8 +163,8 @@ final class ButtonGroup extends LinearLayout {
             fillAnimators.set(i, null);
             TextView b = buttons.get(i);
             b.animate().cancel();
-            b.setScaleX(b.hasFocus() ? 1.05f : 1f);
-            b.setScaleY(b.hasFocus() ? 1.05f : 1f);
+            b.setScaleX(1f);
+            b.setScaleY(1f);
         }
     }
 
