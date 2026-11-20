@@ -128,6 +128,7 @@ public class HomeActivity extends Activity {
     private TextView date;
     private TextView focusTitle;
     private ButtonGroup nav;
+    private String reorderingPkg;
 
     // Focus settles before the expensive part runs, so holding a direction stays smooth.
     private String pendingPkg;
@@ -334,6 +335,26 @@ public class HomeActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (showingApps) showHome();
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (reorderingPkg != null && event.getAction() == KeyEvent.ACTION_DOWN) {
+            int code = event.getKeyCode();
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT) {
+                moveReorderingApp(-1);
+                return true;
+            } else if (code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                moveReorderingApp(1);
+                return true;
+            } else if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) {
+                finishReordering(true);
+                return true;
+            } else if (code == KeyEvent.KEYCODE_BACK) {
+                finishReordering(false);
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
@@ -627,6 +648,10 @@ public class HomeActivity extends Activity {
     }
 
     private void fillDock() {
+        fillDock(true);
+    }
+
+    private void fillDock(boolean animate) {
         List<String> present = dockApps();
         // Kept between visits; rebuild only when the dock's order or an HDMI device's name changes.
         StringBuilder names = new StringBuilder();
@@ -636,7 +661,7 @@ public class HomeActivity extends Activity {
         }
         String key = TextUtils.join(",", present) + names;
         if (key.equals(dockKey) && dock.getChildCount() > 0) {
-            if (!showingApps) dock.getChildAt(0).requestFocus();
+            if (!showingApps && reorderingPkg == null) dock.getChildAt(0).requestFocus();
             return;
         }
         dockKey = key;
@@ -656,9 +681,10 @@ public class HomeActivity extends Activity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             if (i > 0) lp.setMarginStart(dp(GAP));
             dock.addView(tile, lp);
-            arrive(tile, i++);
+            if (animate) arrive(tile, i);
+            i++;
         }
-        if (!showingApps && dock.getChildCount() > 0) dock.getChildAt(0).requestFocus();
+        if (!showingApps && dock.getChildCount() > 0 && reorderingPkg == null) dock.getChildAt(0).requestFocus();
         updateBadges();
     }
 
@@ -727,6 +753,7 @@ public class HomeActivity extends Activity {
         FrameLayout card = new FrameLayout(this);
         card.setFocusable(true);
         card.setClickable(true);
+        card.setTag(pkg);
         GradientDrawable cardShape = new GradientDrawable();
         cardShape.setCornerRadius(radius);
         cardShape.setColor(palette.containerHigh);
@@ -755,6 +782,14 @@ public class HomeActivity extends Activity {
         ringFrame.setBackground(ring);   // the ring sits in the gap around the card; badges draw above it
         ringFrame.addView(card, new FrameLayout.LayoutParams(w, h));
 
+        boolean isReordering = inDock && pkg.equals(reorderingPkg);
+        if (isReordering) {
+            holder.setTranslationY(-dp(10));
+            ringFrame.setScaleX(1.12f);
+            ringFrame.setScaleY(1.12f);
+            ring.setColor(palette.primary);
+        }
+
         // Expressive loading indicator: a small shape that morphs while the app takes its time to open.
         CookieDrawable loaderShape = new CookieDrawable(palette.primary, 4, 0.18f);
         ImageView loader = new ImageView(this);
@@ -776,20 +811,27 @@ public class HomeActivity extends Activity {
         caption.setAlpha(inDock ? 0f : 0.85f);
 
         card.setOnFocusChangeListener((v, focused) -> {
-            float scale = focused ? 1.10f : 1f;
+            boolean activeMove = inDock && pkg.equals(reorderingPkg);
+            float scale = activeMove ? 1.14f : (focused ? 1.10f : 1f);
             ringFrame.animate().scaleX(scale).scaleY(scale)
                     .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
             // A glow in the app's own color (TV focus guidance) instead of a dark shadow.
             card.setOutlineSpotShadowColor(palette.primary);
             card.setOutlineAmbientShadowColor(palette.primary);
-            card.animate().translationZ(focused ? dp(14) : 0)
+            card.animate().translationZ(focused || activeMove ? dp(14) : 0)
                     .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
             ObjectAnimator corners = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), focused ? radius * 0.62f : radius)
                     .setDuration(Motion.FAST_SPATIAL_MS);
             corners.setInterpolator(Motion.FAST_SPATIAL);
             corners.start();
             ring.setCornerRadius((focused ? radius * 0.62f : radius) + dp(RING));
-            fadeRing(ring, focused);
+            if (activeMove) {
+                ring.setColor(palette.primary);
+                ring.setAlpha(255);
+                holder.setTranslationY(-dp(10));
+            } else {
+                fadeRing(ring, focused);
+            }
             if (inDock) shiftNeighbors(holder, focused);
             caption.animate().cancel();
             if (inDock && focused) {
@@ -1560,7 +1602,7 @@ public class HomeActivity extends Activity {
                     .setTitle(label)
                     .setItems(items, (d, which) -> {
                         if (which == 0) unpinApp(pkg, label);
-                        else showReorderDialog(pkg);
+                        else startReordering(pkg);
                     }).show();
         } else {
             new AlertDialog.Builder(this)
@@ -1581,34 +1623,49 @@ public class HomeActivity extends Activity {
         Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
     }
 
-    private void showReorderDialog(String pkg) {
+    private void startReordering(String pkg) {
+        reorderingPkg = pkg;
+        dockKey = "";
+        fillDock(false);
+        focusTileForPkg(pkg);
+        Toast.makeText(this, "Перемещайте стрелками ◀ ▶, затем нажмите ОК", Toast.LENGTH_LONG).show();
+    }
+
+    private void moveReorderingApp(int direction) {
+        if (reorderingPkg == null) return;
         List<String> pinned = PinnedApps.load(this);
-        if (pinned.size() < 2) return;
-        List<String> options = new ArrayList<>();
-        List<String> targets = new ArrayList<>();
-        for (String p : pinned) {
-            if (!p.equals(pkg)) {
-                CharSequence targetLabel = appLabel(p);
-                options.add("Перед «" + (targetLabel.length() > 0 ? targetLabel : p) + "»");
-                targets.add(p);
+        int index = pinned.indexOf(reorderingPkg);
+        if (index < 0) return;
+        int target = index + direction;
+        if (target < 0 || target >= pinned.size()) return;
+        Collections.swap(pinned, index, target);
+        PinnedApps.save(this, pinned);
+        dockKey = "";
+        fillDock(false);
+        focusTileForPkg(reorderingPkg);
+    }
+
+    private void finishReordering(boolean confirmed) {
+        String pkg = reorderingPkg;
+        reorderingPkg = null;
+        dockKey = "";
+        fillDock(false);
+        if (pkg != null) focusTileForPkg(pkg);
+        if (confirmed) {
+            Toast.makeText(this, "Порядок сохранён", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void focusTileForPkg(String targetPkg) {
+        if (targetPkg == null) return;
+        View card = dock.findViewWithTag(targetPkg);
+        if (card != null) {
+            card.requestFocus();
+            if (scroller != null && card.getParent() != null && card.getParent().getParent() instanceof View) {
+                View holder = (View) card.getParent().getParent();
+                scroller.requestChildFocus(holder, card);
             }
         }
-        options.add("В конец");
-        CharSequence curLabel = appLabel(pkg);
-        new AlertDialog.Builder(this)
-                .setTitle("Переместить «" + (curLabel.length() > 0 ? curLabel : pkg) + "»")
-                .setItems(options.toArray(new String[0]), (d, which) -> {
-                    pinned.remove(pkg);
-                    if (which < targets.size()) {
-                        int pos = pinned.indexOf(targets.get(which));
-                        pinned.add(pos, pkg);
-                    } else {
-                        pinned.add(pkg);
-                    }
-                    PinnedApps.save(this, pinned);
-                    dockKey = "";
-                    fillDock();
-                }).show();
     }
 
     // ---- motion ----
