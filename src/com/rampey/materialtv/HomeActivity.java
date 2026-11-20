@@ -417,16 +417,19 @@ public class HomeActivity extends Activity {
         bar.addView(when, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.TOP));
 
         nav = new ButtonGroup(this, font(600), palette,
-                new String[]{"Home", "Apps", "Ask", "Settings"},
-                new int[]{R.drawable.ic_home, R.drawable.ic_apps, R.drawable.ic_ask, R.drawable.ic_settings},
-                new boolean[]{true, true, false, false},
+                new String[]{"Home", "Apps", "Settings"},
+                new int[]{R.drawable.ic_home, R.drawable.ic_apps, R.drawable.ic_settings},
+                new boolean[]{true, true, false},
                 index -> {
                     if (index == 0) showHome();
                     else if (index == 1) showApps();
-                    else if (index == 2) {
-                        if (!AssistantSetup.hasKey(this) || !AssistService.showAssistant())
-                            startActivity(new Intent(this, TvControlActivity.class).putExtra("voice_setup", true));
-                    } else launch(new Intent(this, TvControlActivity.class));
+                    else {
+                        try {
+                            startActivity(new Intent(Settings.ACTION_SETTINGS));
+                        } catch (ActivityNotFoundException e) {
+                            launch(new Intent(this, TvControlActivity.class));
+                        }
+                    }
                 });
         nav.select(0);
         bar.addView(nav, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END | Gravity.TOP));
