@@ -144,10 +144,7 @@ public class HomeActivity extends Activity {
     private ValueAnimator dockScrollAnim;
     private int dockScrollTarget = -1;
     private String lastFocusedDockPkg;
-    private View wifiPill;
-    private TextView wifiButton;
-    private GradientDrawable wifiStrip;
-    private GradientDrawable wifiBg;
+    private ButtonGroup wifiPill;
     private boolean wifiConnected;
     private ConnectivityManager.NetworkCallback wifiCallback;
 
@@ -333,6 +330,7 @@ public class HomeActivity extends Activity {
         if (colorAnimator != null) colorAnimator.end();
         if (dockScrollAnim != null) dockScrollAnim.cancel();
         nav.stopAnimations();
+        if (wifiPill != null) wifiPill.stopAnimations();
         handler.removeCallbacks(settle);
         // The media session stays watched (it only updates fields, never views) so the card remembers what played
         // while another app had the screen; it is let go in onDestroy.
@@ -517,104 +515,46 @@ public class HomeActivity extends Activity {
         Space tabGap = new Space(this);
         topEndRow.addView(tabGap, new LinearLayout.LayoutParams(dp(12), 1));
 
-        wifiPill = buildWifiPill();
+        wifiPill = new ButtonGroup(this, font(600), palette,
+                new String[]{"Wi-Fi"},
+                new int[]{R.drawable.ic_wifi},
+                new boolean[]{false},
+                index -> launchWifiSettings());
         topEndRow.addView(wifiPill, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         bar.addView(topEndRow, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END | Gravity.TOP));
 
         TextView settingsBtn = nav.getButton(2);
-        if (settingsBtn != null && wifiButton != null) {
-            settingsBtn.setNextFocusRightId(wifiButton.getId());
-            wifiButton.setNextFocusLeftId(settingsBtn.getId());
-            wifiButton.setNextFocusRightId(wifiButton.getId());
-            wifiButton.setNextFocusUpId(wifiButton.getId());
+        TextView wifiBtn = wifiPill.getButton(0);
+        if (settingsBtn != null && wifiBtn != null) {
+            settingsBtn.setNextFocusRightId(wifiBtn.getId());
+            wifiBtn.setNextFocusLeftId(settingsBtn.getId());
+            wifiBtn.setNextFocusRightId(wifiBtn.getId());
+            wifiBtn.setNextFocusUpId(wifiBtn.getId());
         }
         return bar;
     }
 
-    private View buildWifiPill() {
-        FrameLayout pill = new FrameLayout(this);
-        pill.setClipChildren(false);
-        pill.setClipToPadding(false);
-        wifiStrip = new GradientDrawable();
-        wifiStrip.setCornerRadius(dp(30));
-        wifiStrip.setColor((palette.container & 0x00FFFFFF) | 0xE6000000);
-        pill.setBackground(wifiStrip);
-        pill.setPadding(dp(5), dp(5), dp(5), dp(5));
-
-        wifiButton = new TextView(this);
-        wifiButton.setId(View.generateViewId());
-        wifiButton.setTypeface(font(600));
-        wifiButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        wifiButton.setGravity(Gravity.CENTER);
-        wifiButton.setPadding(dp(18), dp(11), dp(20), dp(11));
-        wifiButton.setFocusable(true);
-        wifiButton.setClickable(true);
-        wifiButton.setSingleLine(true);
-        wifiButton.setEllipsize(TextUtils.TruncateAt.END);
-        wifiButton.setMaxWidth(dp(220));
-
-        Drawable icon = getDrawable(R.drawable.ic_wifi);
-        if (icon != null) {
-            icon.setBounds(0, 0, dp(18), dp(18));
-            wifiButton.setCompoundDrawablesRelative(icon, null, null, null);
-            wifiButton.setCompoundDrawablePadding(dp(8));
-        }
-
-        wifiBg = new GradientDrawable();
-        wifiBg.setCornerRadius(dp(24));
-        wifiBg.setColor(Color.TRANSPARENT);
-        wifiButton.setBackground(wifiBg);
-
-        wifiButton.setOnFocusChangeListener((v, focused) -> {
-            v.animate().scaleX(focused ? 1.05f : 1f).scaleY(focused ? 1.05f : 1f)
-                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            restyleWifiButton(focused);
-        });
-
-        wifiButton.setOnClickListener(v -> {
+    private void launchWifiSettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
+        } catch (ActivityNotFoundException e1) {
             try {
-                startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
-            } catch (ActivityNotFoundException e1) {
+                startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS));
+            } catch (ActivityNotFoundException e2) {
                 try {
-                    startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS));
-                } catch (ActivityNotFoundException e2) {
-                    try {
-                        startActivity(new Intent(Settings.ACTION_SETTINGS));
-                    } catch (ActivityNotFoundException e3) {
-                        launch(new Intent(this, TvControlActivity.class));
-                    }
+                    startActivity(new Intent(Settings.ACTION_SETTINGS));
+                } catch (ActivityNotFoundException e3) {
+                    launch(new Intent(this, TvControlActivity.class));
                 }
             }
-        });
-
-        pill.addView(wifiButton, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        return pill;
-    }
-
-    private void restyleWifiButton(boolean focused) {
-        if (wifiButton == null || wifiBg == null) return;
-        int fill = focused ? palette.inverseSurface : Color.TRANSPARENT;
-        wifiBg.setColor(fill);
-        int ink;
-        if (focused) {
-            ink = palette.inverseOnSurface;
-        } else if (wifiConnected) {
-            ink = palette.onSurfaceVariant;
-        } else {
-            ink = 0xFF8E9192;
-        }
-        wifiButton.setTextColor(ink);
-        for (Drawable d : wifiButton.getCompoundDrawablesRelative()) {
-            if (d != null) d.setTintList(ColorStateList.valueOf(ink));
         }
     }
 
     private void setWifiPillState(boolean connected, String text) {
         wifiConnected = connected;
-        if (wifiButton != null) {
-            wifiButton.setText(text);
-            restyleWifiButton(wifiButton.hasFocus());
+        if (wifiPill != null) {
+            wifiPill.setLabel(0, text);
         }
     }
 
@@ -1400,10 +1340,9 @@ public class HomeActivity extends Activity {
         });
         colorAnimator.start();
         nav.setPalette(next);
-        if (wifiStrip != null) {
-            wifiStrip.setColor((next.container & 0x00FFFFFF) | 0xE6000000);
+        if (wifiPill != null) {
+            wifiPill.setPalette(next);
         }
-        restyleWifiButton(wifiButton != null && wifiButton.hasFocus());
         styleNowPlaying();
     }
 

@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -48,13 +49,17 @@ final class ButtonGroup extends LinearLayout {
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
             TextView b = new TextView(context);
+            b.setId(View.generateViewId());
             b.setText(labels[i]);
             b.setTypeface(face);
             b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
             b.setGravity(Gravity.CENTER);
-            b.setPadding(dp(20), dp(11), dp(22), dp(11));
+            b.setPadding(dp(18), dp(11), dp(20), dp(11));
             b.setFocusable(true);
             b.setClickable(true);
+            b.setSingleLine(true);
+            b.setEllipsize(TextUtils.TruncateAt.END);
+            b.setMaxWidth(dp(220));
             Drawable icon = context.getDrawable(icons[i]);
             if (icon != null) {
                 icon.setBounds(0, 0, dp(18), dp(18));
@@ -85,6 +90,12 @@ final class ButtonGroup extends LinearLayout {
     TextView getButton(int index) {
         if (index >= 0 && index < buttons.size()) return buttons.get(index);
         return null;
+    }
+
+    void setLabel(int index, String label) {
+        if (index >= 0 && index < buttons.size()) {
+            buttons.get(index).setText(label);
+        }
     }
 
     void setPalette(Palette p) {
