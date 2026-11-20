@@ -271,6 +271,7 @@ public class HomeActivity extends Activity {
         super.onCreate(state);
         liveHome = new java.lang.ref.WeakReference<>(this);
         pm = getPackageManager();
+        titleFont(820);
         setContentView(buildRoot());
     }
 
@@ -446,6 +447,7 @@ public class HomeActivity extends Activity {
         page.setClipChildren(false);
 
         focusTitle = text("", 64, palette.onSurface, 820);
+        focusTitle.setTypeface(titleFont(820));
         focusTitle.setIncludeFontPadding(false);
         // Normal spacing and no ligatures: at display sizes "tf" or "fl" would otherwise touch.
         focusTitle.setLetterSpacing(0.005f);
@@ -928,11 +930,11 @@ public class HomeActivity extends Activity {
     private void applyFocus(String pkg, CharSequence label, Drawable art) {
         if (pkg == null) return;
         if (!showingApps && !TextUtils.equals(focusTitle.getText(), label)) {
+            focusTitle.setTypeface(titleFont(820));
             focusTitle.setText(label);
             focusTitle.setAlpha(0f);
             focusTitle.setTranslationY(dp(12));
             focusTitle.animate().alpha(1f).translationY(0).setInterpolator(Motion.DEFAULT_SPATIAL).setDuration(Motion.DEFAULT_SPATIAL_MS).start();
-            animateTitleWeight();
         }
         morphShape(pkg);
         retint(paletteFor(pkg, art));
@@ -968,14 +970,6 @@ public class HomeActivity extends Activity {
                 }
             }
         }, "palette-warmup").start();
-    }
-
-    /** Expressive type: the app name lands a little lighter and settles into its full weight. */
-    private void animateTitleWeight() {
-        ValueAnimator a = ValueAnimator.ofInt(0, 6).setDuration(Motion.DEFAULT_SPATIAL_MS);
-        a.setInterpolator(Motion.DEFAULT_EFFECTS);
-        a.addUpdateListener(an -> focusTitle.setTypeface(titleFont(560 + 30 * (int) an.getAnimatedValue())));
-        a.start();
     }
 
     private Typeface titleFont(int weight) {
