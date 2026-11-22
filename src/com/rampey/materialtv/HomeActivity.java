@@ -1891,7 +1891,12 @@ public class HomeActivity extends Activity {
         appsPage.scrollTo(0, 0);
         nav.select(1);
         if (nowCard != null) nowCard.setVisibility(View.GONE);
-        if (appsGrid.getChildCount() > 0) appsGrid.getChildAt(0).requestFocus();
+        if (appsGrid.getChildCount() > 0) {
+            View first = appsGrid.getChildAt(0);
+            View firstCard = cardFromHolder(first);
+            if (firstCard != null) firstCard.requestFocus();
+            else if (first != null) first.requestFocus();
+        }
     }
 
     // ---- Now Playing ----
