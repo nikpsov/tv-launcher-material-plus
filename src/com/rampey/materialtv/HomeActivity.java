@@ -121,7 +121,9 @@ public class HomeActivity extends Activity {
     };
     private final Runnable prebuildApps = new Runnable() {
         @Override public void run() {
-            if (!HomeActivity.this.showingApps) fillApps();
+            if (!HomeActivity.this.showingApps) {
+                loadInstalledAppsAsync(HomeActivity.this::fillApps);
+            }
         }
     };
     private GradientDrawable dockShape;
@@ -295,6 +297,7 @@ public class HomeActivity extends Activity {
         titleFont(820, "А");
         setContentView(buildRoot());
         registerWifiCallback();
+        loadInstalledAppsAsync(null);
     }
 
     @Override protected void onResume() {
@@ -913,7 +916,10 @@ public class HomeActivity extends Activity {
         dock.post(this::updateScrollScrims);
     }
 
-    private List<ResolveInfo> getInstalledApps() {
+    private volatile List<ResolveInfo> cachedInstalledApps;
+    private boolean loadingInstalledApps;
+
+    private List<ResolveInfo> queryInstalledApps() {
         Set<String> seen = new LinkedHashSet<>();
         List<ResolveInfo> found = new ArrayList<>();
         for (String category : new String[]{Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER}) {
@@ -929,8 +935,35 @@ public class HomeActivity extends Activity {
         return found;
     }
 
+    private void loadInstalledAppsAsync(Runnable onLoaded) {
+        if (cachedInstalledApps != null) {
+            if (onLoaded != null) onLoaded.run();
+            return;
+        }
+        if (loadingInstalledApps) return;
+        loadingInstalledApps = true;
+        new Thread(() -> {
+            List<ResolveInfo> apps = queryInstalledApps();
+            cachedInstalledApps = apps;
+            loadingInstalledApps = false;
+            handler.post(() -> {
+                if (onLoaded != null) onLoaded.run();
+                if (showingApps) fillApps();
+            });
+        }, "load-installed-apps").start();
+    }
+
+    private List<ResolveInfo> getInstalledApps() {
+        if (cachedInstalledApps != null) return cachedInstalledApps;
+        return queryInstalledApps();
+    }
+
     private void fillApps() {
-        List<ResolveInfo> found = getInstalledApps();
+        List<ResolveInfo> found = cachedInstalledApps;
+        if (found == null) {
+            loadInstalledAppsAsync(this::fillApps);
+            found = getInstalledApps();
+        }
         List<String> pkgs = new ArrayList<>();
         for (ResolveInfo info : found) pkgs.add(info.activityInfo.packageName);
         String key = TextUtils.join(",", pkgs);
