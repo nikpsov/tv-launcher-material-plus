@@ -1071,20 +1071,26 @@ public class HomeActivity extends Activity {
     private void applyFocusStyle(View card, View ringFrame, GradientDrawable cardShape,
                                  GradientDrawable ring, ValueAnimator[] ringAnim,
                                  ObjectAnimator[] cornerAnim, float radius, boolean focused) {
-        applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, radius, focused, false);
+        applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, radius, focused, false, dp(14));
     }
 
     private void applyFocusStyle(View card, View ringFrame, GradientDrawable cardShape,
                                  GradientDrawable ring, ValueAnimator[] ringAnim,
                                  ObjectAnimator[] cornerAnim, float radius, boolean focused, boolean activeMove) {
+        applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, radius, focused, activeMove, dp(14));
+    }
+
+    private void applyFocusStyle(View card, View ringFrame, GradientDrawable cardShape,
+                                 GradientDrawable ring, ValueAnimator[] ringAnim,
+                                 ObjectAnimator[] cornerAnim, float radius, boolean focused, boolean activeMove, int elevation) {
         float scale = activeMove ? 1.14f : (focused ? 1.10f : 1f);
         ringFrame.animate().scaleX(scale).scaleY(scale)
                 .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
+        if (android.os.Build.VERSION.SDK_INT >= 29 && elevation > 0) {
             card.setOutlineSpotShadowColor(palette.primary);
             card.setOutlineAmbientShadowColor(palette.primary);
         }
-        card.animate().translationZ(focused || activeMove ? dp(14) : 0)
+        card.animate().translationZ(focused || activeMove ? elevation : 0)
                 .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
 
         if (cornerAnim != null) {
@@ -1360,7 +1366,7 @@ public class HomeActivity extends Activity {
         card.setOnClickListener(v -> showPinPickerDialog());
 
         card.setOnFocusChangeListener((v, focused) -> {
-            applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, btnSize / 2f, focused);
+            applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, btnSize / 2f, focused, false, 0);
 
             cardShape.setColor(focused ? palette.inverseSurface : palette.containerHigh);
             image.setImageTintList(ColorStateList.valueOf(focused ? palette.inverseOnSurface : palette.onSurfaceVariant));
