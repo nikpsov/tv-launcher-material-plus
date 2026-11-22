@@ -1721,6 +1721,7 @@ public class HomeActivity extends Activity {
             }
         }
 
+        doneBtn.setNextFocusUpId(doneBtn.getId());
         if (!cards.isEmpty()) {
             doneBtn.setNextFocusDownId(cards.get(0).getId());
         }
@@ -2578,9 +2579,13 @@ public class HomeActivity extends Activity {
     private void scrollDockToTile(View holder) {
         if (scroller == null || dock == null || holder == null) return;
         View actualHolder = findTileHolder(holder);
-        if (actualHolder == null) return;
+        if (actualHolder == null || !actualHolder.isAttachedToWindow() || actualHolder.getParent() != dock) return;
         if (actualHolder.getWidth() <= 0 || scroller.getWidth() <= 0) {
-            actualHolder.post(() -> scrollDockToTile(actualHolder));
+            actualHolder.post(() -> {
+                if (actualHolder.isAttachedToWindow() && actualHolder.getParent() == dock) {
+                    scrollDockToTile(actualHolder);
+                }
+            });
             return;
         }
 
