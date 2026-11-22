@@ -807,6 +807,24 @@ public class HomeActivity extends Activity {
         return launchIntent(key);
     }
 
+    private void restoreDockFocus() {
+        if (showingApps || dock == null || dock.getChildCount() == 0 || reorderingPkg != null) return;
+        if (lastFocusedDockPkg != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
+            focusTileForPkg(lastFocusedDockPkg);
+        } else {
+            View firstCard = cardFromHolder(dock.getChildAt(0));
+            if (firstCard != null) firstCard.requestFocus();
+            else dock.getChildAt(0).requestFocus();
+        }
+    }
+
+    private void pinAndRefresh(String pkg, CharSequence label) {
+        PinnedApps.pin(this, pkg);
+        dockKey = "";
+        fillDock(true);
+        Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+    }
+
     private void fillDock() {
         fillDock(true);
     }
@@ -822,17 +840,7 @@ public class HomeActivity extends Activity {
         String key = (present.isEmpty() ? ":empty:" : TextUtils.join(",", present)) + names;
         if (key.equals(dockKey) && dock.getChildCount() > 0) {
             if (!showingApps && reorderingPkg == null) {
-                dock.post(() -> {
-                    if (!showingApps && dock != null && dock.getChildCount() > 0 && reorderingPkg == null) {
-                        if (lastFocusedDockPkg != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
-                            focusTileForPkg(lastFocusedDockPkg);
-                        } else {
-                            View firstCard = cardFromHolder(dock.getChildAt(0));
-                            if (firstCard != null) firstCard.requestFocus();
-                            else dock.getChildAt(0).requestFocus();
-                        }
-                    }
-                });
+                dock.post(this::restoreDockFocus);
             }
             return;
         }
@@ -858,12 +866,7 @@ public class HomeActivity extends Activity {
                 c.setNextFocusDownId(c.getId());
             }
             if (!showingApps && reorderingPkg == null) {
-                dock.post(() -> {
-                    if (!showingApps && dock != null && dock.getChildCount() > 0 && reorderingPkg == null) {
-                        if (c != null) c.requestFocus();
-                        else dock.getChildAt(0).requestFocus();
-                    }
-                });
+                dock.post(this::restoreDockFocus);
             }
             dock.post(this::updateScrollScrims);
             return;
@@ -905,17 +908,7 @@ public class HomeActivity extends Activity {
             c.setNextFocusDownId(c.getId());
         }
         if (!showingApps && dock.getChildCount() > 0 && reorderingPkg == null) {
-            dock.post(() -> {
-                if (!showingApps && dock != null && dock.getChildCount() > 0 && reorderingPkg == null) {
-                    if (lastFocusedDockPkg != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
-                        focusTileForPkg(lastFocusedDockPkg);
-                    } else {
-                        View firstCard = cardFromHolder(dock.getChildAt(0));
-                        if (firstCard != null) firstCard.requestFocus();
-                        else dock.getChildAt(0).requestFocus();
-                    }
-                }
-            });
+            dock.post(this::restoreDockFocus);
         }
         updateBadges();
         dock.post(this::updateScrollScrims);
@@ -1903,15 +1896,7 @@ public class HomeActivity extends Activity {
         homePage.setVisibility(View.VISIBLE);
         nav.select(0);
         if (nowCard != null) showNowPlaying();
-        if (dock != null && dock.getChildCount() > 0) {
-            if (lastFocusedDockPkg != null && dock.findViewWithTag(lastFocusedDockPkg) != null) {
-                focusTileForPkg(lastFocusedDockPkg);
-            } else {
-                View firstCard = cardFromHolder(dock.getChildAt(0));
-                if (firstCard != null) firstCard.requestFocus();
-                else dock.getChildAt(0).requestFocus();
-            }
-        }
+        restoreDockFocus();
     }
 
     private void showApps() {
@@ -2409,10 +2394,7 @@ public class HomeActivity extends Activity {
                         if (pinned) {
                             unpinApp(pkg, label);
                         } else {
-                            PinnedApps.pin(this, pkg);
-                            dockKey = "";
-                            fillDock(true);
-                            Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                            pinAndRefresh(pkg, label);
                         }
                     } else if (which == 1) {
                         openAppSettings(pkg);
@@ -2442,10 +2424,7 @@ public class HomeActivity extends Activity {
                     .setTitle(label)
                     .setItems(new String[]{"Закрепить на главном экране", "Настройки приложения"}, (d, which) -> {
                         if (which == 0) {
-                            PinnedApps.pin(this, pkg);
-                            dockKey = "";
-                            fillDock(true);
-                            Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
+                            pinAndRefresh(pkg, label);
                         } else if (which == 1) {
                             openAppSettings(pkg);
                         }
