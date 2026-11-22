@@ -879,6 +879,13 @@ public class HomeActivity extends Activity {
             if (animate) arrive(tile, i);
             i++;
         }
+        if (reorderingPkg == null) {
+            View plus = buildCompactPlusTile(tileDp);
+            LinearLayout.LayoutParams plusLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            plusLp.setMarginStart(dp(GAP));
+            dock.addView(plus, plusLp);
+            if (animate) arrive(plus, i);
+        }
         int count = dock.getChildCount();
         for (int j = 0; j < count; j++) {
             View c = cardFromHolder(dock.getChildAt(j));
@@ -1241,6 +1248,83 @@ public class HomeActivity extends Activity {
         rl.leftMargin = -dp(24);
         rl.rightMargin = -dp(24);
         holder.addView(captionRow, rl);
+        return holder;
+    }
+
+    /** A compact plus button at the end of the dock row. */
+    private View buildCompactPlusTile(int tileDp) {
+        int w = dp(tileDp);
+        int h = w * 9 / 16;
+        int btnSize = dp(56);
+        if (btnSize > h) btnSize = h;
+
+        LinearLayout holder = new LinearLayout(this);
+        holder.setOrientation(LinearLayout.VERTICAL);
+        holder.setClipChildren(false);
+        holder.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        final CharSequence label = "Добавить приложение";
+
+        FrameLayout card = new FrameLayout(this);
+        card.setId(View.generateViewId());
+        card.setFocusable(true);
+        card.setClickable(true);
+        card.setTag(":compact_plus:");
+        GradientDrawable cardShape = new GradientDrawable();
+        cardShape.setCornerRadius(btnSize / 2f);
+        cardShape.setColor(palette.containerHigh);
+        card.setBackground(cardShape);
+        card.setClipToOutline(true);
+
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageResource(R.drawable.ic_add);
+        image.setImageTintList(ColorStateList.valueOf(palette.onSurfaceVariant));
+        card.addView(image, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        card.setContentDescription(label);
+
+        GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadius(btnSize / 2f + dp(RING));
+        ring.setColor(Color.TRANSPARENT);
+        FrameLayout ringFrame = new FrameLayout(this);
+        ringFrame.setClipChildren(false);
+        ringFrame.setPadding(dp(RING), dp(RING), dp(RING), dp(RING));
+        ringFrame.setBackground(ring);
+        ringFrame.addView(card, new FrameLayout.LayoutParams(btnSize, btnSize));
+
+        final ValueAnimator[] ringAnim = new ValueAnimator[1];
+
+        card.setOnClickListener(v -> showPinPickerDialog());
+
+        card.setOnFocusChangeListener((v, focused) -> {
+            float scale = focused ? 1.10f : 1f;
+            ringFrame.animate().scaleX(scale).scaleY(scale)
+                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
+            card.setOutlineSpotShadowColor(palette.primary);
+            card.setOutlineAmbientShadowColor(palette.primary);
+            card.animate().translationZ(focused ? dp(14) : 0)
+                    .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
+
+            fadeRing(ringAnim, ring, focused);
+
+            cardShape.setColor(focused ? palette.inverseSurface : palette.containerHigh);
+            image.setImageTintList(ColorStateList.valueOf(focused ? palette.inverseOnSurface : palette.onSurfaceVariant));
+
+            if (focused) {
+                lastFocusedDockPkg = ":compact_plus:";
+                scrollDockToTile(holder);
+                onTileFocused(null, label, null);
+            }
+        });
+
+        int topOffset = Math.max(0, (h - btnSize) / 2);
+        LinearLayout.LayoutParams ringLp = new LinearLayout.LayoutParams(btnSize + dp(2 * RING), btnSize + dp(2 * RING));
+        ringLp.topMargin = topOffset;
+        holder.addView(ringFrame, ringLp);
+
+        View spacer = new View(this);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(btnSize, dp(32) + dp(8) + (h - btnSize - topOffset));
+        holder.addView(spacer, slp);
         return holder;
     }
 
