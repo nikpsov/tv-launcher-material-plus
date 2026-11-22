@@ -7,6 +7,7 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
@@ -20,6 +21,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.media.MediaMetadata;
@@ -912,7 +914,7 @@ public class HomeActivity extends Activity {
         dock.post(this::updateScrollScrims);
     }
 
-    private void fillApps() {
+    private List<ResolveInfo> getInstalledApps() {
         Set<String> seen = new LinkedHashSet<>();
         List<ResolveInfo> found = new ArrayList<>();
         for (String category : new String[]{Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER}) {
@@ -922,15 +924,20 @@ public class HomeActivity extends Activity {
                 found.add(info);
             }
         }
-        // The grid is kept between visits; rebuild only when the set of installed apps changed.
-        String key = TextUtils.join(",", seen);
-        if (key.equals(appsKey) && appsGrid.getChildCount() > 0) return;
-        appsKey = key;
-        appsGrid.removeAllViews();
-        // Read each label once (loading a label is slow), then sort.
         Map<ResolveInfo, String> labels = new HashMap<>();
         for (ResolveInfo info : found) labels.put(info, String.valueOf(info.loadLabel(pm)));
         Collections.sort(found, (a, b) -> labels.get(a).compareToIgnoreCase(labels.get(b)));
+        return found;
+    }
+
+    private void fillApps() {
+        List<ResolveInfo> found = getInstalledApps();
+        List<String> pkgs = new ArrayList<>();
+        for (ResolveInfo info : found) pkgs.add(info.activityInfo.packageName);
+        String key = TextUtils.join(",", pkgs);
+        if (key.equals(appsKey) && appsGrid.getChildCount() > 0) return;
+        appsKey = key;
+        appsGrid.removeAllViews();
         // Five columns that exactly fill the width between the side margins (tile + focus-ring room + gaps).
         int cols = appsGrid.getColumnCount();
         float screenDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
@@ -1348,8 +1355,287 @@ public class HomeActivity extends Activity {
         return p;
     }
 
+    private View pickerTile(String pkg, int widthDp, Set<String> selected) {
+        int w = dp(widthDp);
+        int h = w * 9 / 16;
+        int radius = dp(Focus.MEDIA);
+        LinearLayout holder = new LinearLayout(this);
+        holder.setOrientation(LinearLayout.VERTICAL);
+        holder.setClipChildren(false);
+        holder.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        CharSequence name = pkg;
+        Drawable banner = null;
+        Drawable icon = null;
+        try {
+            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+            name = pm.getApplicationLabel(ai);
+            banner = pm.getApplicationBanner(ai);
+            if (banner == null) icon = pm.getApplicationIcon(ai);
+        } catch (PackageManager.NameNotFoundException ignored) {
+        }
+        final CharSequence label = name;
+
+        FrameLayout card = new FrameLayout(this);
+        card.setId(View.generateViewId());
+        card.setFocusable(true);
+        card.setClickable(true);
+        card.setTag(pkg);
+        GradientDrawable cardShape = new GradientDrawable();
+        cardShape.setCornerRadius(radius);
+        cardShape.setColor(banner != null ? Color.TRANSPARENT : palette.containerHigh);
+        card.setBackground(cardShape);
+        card.setClipToOutline(true);
+
+        ImageView image = new ImageView(this);
+        if (banner != null) {
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setImageDrawable(banner);
+            card.addView(image, match());
+        } else {
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            image.setImageDrawable(icon);
+            card.addView(image, new FrameLayout.LayoutParams(h / 2, h / 2, Gravity.CENTER));
+        }
+        card.setContentDescription(label);
+
+        // Checkmark badge in the top-right corner
+        FrameLayout checkBadge = new FrameLayout(this);
+        GradientDrawable badgeBg = new GradientDrawable();
+        badgeBg.setShape(GradientDrawable.OVAL);
+        badgeBg.setColor(palette.primary);
+        checkBadge.setBackground(badgeBg);
+
+        ImageView checkIcon = new ImageView(this);
+        checkIcon.setImageResource(R.drawable.ic_check);
+        checkIcon.setImageTintList(ColorStateList.valueOf(palette.onPrimary));
+        checkIcon.setPadding(dp(4), dp(4), dp(4), dp(4));
+        checkBadge.addView(checkIcon, match());
+
+        int badgeSize = dp(26);
+        FrameLayout.LayoutParams badgeLp = new FrameLayout.LayoutParams(badgeSize, badgeSize, Gravity.TOP | Gravity.END);
+        badgeLp.setMargins(0, dp(6), dp(6), 0);
+        card.addView(checkBadge, badgeLp);
+
+        boolean isSelected = selected.contains(pkg);
+        checkBadge.setVisibility(isSelected ? View.VISIBLE : View.GONE);
+        checkBadge.setAlpha(isSelected ? 1f : 0f);
+        checkBadge.setScaleX(isSelected ? 1f : 0f);
+        checkBadge.setScaleY(isSelected ? 1f : 0f);
+
+        card.setOnClickListener(v -> {
+            boolean checked = selected.contains(pkg);
+            if (checked) {
+                selected.remove(pkg);
+                checkBadge.animate().alpha(0f).scaleX(0f).scaleY(0f)
+                        .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.FAST_EFFECTS_MS)
+                        .withEndAction(() -> checkBadge.setVisibility(View.GONE)).start();
+            } else {
+                selected.add(pkg);
+                checkBadge.setVisibility(View.VISIBLE);
+                checkBadge.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                        .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
+            }
+            v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(80).withEndAction(() ->
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start()).start();
+        });
+
+        GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadius(radius + dp(RING));
+        ring.setColor(Color.TRANSPARENT);
+        FrameLayout ringFrame = new FrameLayout(this);
+        ringFrame.setClipChildren(false);
+        ringFrame.setPadding(dp(RING), dp(RING), dp(RING), dp(RING));
+        ringFrame.setBackground(ring);
+        ringFrame.addView(card, new FrameLayout.LayoutParams(w, h));
+
+        final ValueAnimator[] ringAnim = new ValueAnimator[1];
+        final ObjectAnimator[] cornerAnim = new ObjectAnimator[1];
+
+        TextView caption = text(label, 14, palette.onSurfaceVariant, 560);
+        caption.setGravity(Gravity.CENTER_HORIZONTAL);
+        caption.setSingleLine(true);
+        caption.setEllipsize(TextUtils.TruncateAt.END);
+        caption.setPadding(0, dp(10), 0, 0);
+        caption.setAlpha(0.85f);
+
+        card.setOnFocusChangeListener((v, focused) -> {
+            float scale = focused ? 1.10f : 1f;
+            ringFrame.animate().scaleX(scale).scaleY(scale)
+                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
+            card.setOutlineSpotShadowColor(palette.primary);
+            card.setOutlineAmbientShadowColor(palette.primary);
+            card.animate().translationZ(focused ? dp(14) : 0)
+                    .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
+
+            if (cornerAnim[0] != null) cornerAnim[0].cancel();
+            float targetRadius = focused ? radius * 0.62f : radius;
+            cornerAnim[0] = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), targetRadius);
+            cornerAnim[0].setDuration(Motion.FAST_SPATIAL_MS);
+            cornerAnim[0].setInterpolator(Motion.FAST_SPATIAL);
+            cornerAnim[0].addUpdateListener(anim -> card.invalidateOutline());
+            cornerAnim[0].start();
+
+            ring.setCornerRadius(targetRadius + dp(RING));
+            fadeRing(ringAnim, ring, focused);
+
+            caption.animate().cancel();
+            caption.animate().alpha(focused ? 1f : 0.85f).setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.FAST_EFFECTS_MS).start();
+            caption.setTextColor(focused ? palette.onSurface : palette.onSurfaceVariant);
+        });
+
+        holder.addView(ringFrame, new LinearLayout.LayoutParams(w + dp(2 * RING), h + dp(2 * RING)));
+        LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(w + dp(48), dp(32));
+        rl.topMargin = dp(8);
+        rl.leftMargin = -dp(24);
+        rl.rightMargin = -dp(24);
+        holder.addView(caption, rl);
+        return holder;
+    }
+
     private void showPinPickerDialog() {
-        showApps();
+        List<ResolveInfo> apps = getInstalledApps();
+        List<String> currentPinned = PinnedApps.load(this);
+        Set<String> selected = new LinkedHashSet<>(currentPinned);
+
+        Dialog dialog = new Dialog(this, R.style.HomeTheme);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0xEE0B1026));
+        }
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(SIDE), dp(32), dp(SIDE), dp(28));
+        root.setClipChildren(false);
+
+        // Header: Title and Done button
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setClipChildren(false);
+
+        TextView title = new TextView(this);
+        title.setText("Закрепить приложения");
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
+        title.setTypeface(titleFont(820));
+        title.setTextColor(palette.onSurface);
+        header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView doneBtn = new TextView(this);
+        doneBtn.setId(View.generateViewId());
+        doneBtn.setText("Готово");
+        doneBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        doneBtn.setTypeface(font(760));
+        doneBtn.setGravity(Gravity.CENTER);
+        doneBtn.setFocusable(true);
+        doneBtn.setClickable(true);
+        doneBtn.setPadding(dp(24), dp(10), dp(24), dp(10));
+        GradientDrawable doneShape = new GradientDrawable();
+        doneShape.setCornerRadius(dp(20));
+        doneShape.setColor(palette.containerHigh);
+        doneBtn.setBackground(doneShape);
+        doneBtn.setTextColor(palette.onSurface);
+
+        doneBtn.setOnFocusChangeListener((v, focused) -> {
+            doneBtn.animate().scaleX(focused ? 1.08f : 1.0f).scaleY(focused ? 1.08f : 1.0f)
+                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
+            doneShape.setColor(focused ? palette.inverseSurface : palette.containerHigh);
+            doneBtn.setTextColor(focused ? palette.inverseOnSurface : palette.onSurface);
+        });
+
+        Runnable applyAndDismiss = () -> {
+            List<String> updated = new ArrayList<>();
+            for (String p : currentPinned) {
+                if (selected.contains(p)) updated.add(p);
+            }
+            for (String s : selected) {
+                if (!updated.contains(s)) updated.add(s);
+            }
+            PinnedApps.save(this, updated);
+            dockKey = "";
+            fillDock(true);
+            dialog.dismiss();
+        };
+
+        doneBtn.setOnClickListener(v -> applyAndDismiss.run());
+        header.addView(doneBtn, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setClipToPadding(false);
+        scroll.setClipChildren(false);
+
+        GridLayout grid = new GridLayout(this);
+        int cols = 5;
+        grid.setColumnCount(cols);
+        grid.setClipChildren(false);
+
+        float screenDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
+        float inner = screenDp - 2 * SIDE - cols * (2 * RING + 2 * APP_MARGIN);
+        int tileDp = (int) Math.min(170, inner / cols);
+
+        List<View> cards = new ArrayList<>();
+        for (ResolveInfo info : apps) {
+            String pkg = info.activityInfo.packageName;
+            View tileView = pickerTile(pkg, tileDp, selected);
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+            lp.setMargins(dp(APP_MARGIN), dp(10), dp(APP_MARGIN), dp(16));
+            grid.addView(tileView, lp);
+            View c = cardFromHolder(tileView);
+            if (c != null) cards.add(c);
+        }
+
+        // Setup TV D-pad focus navigation inside modal
+        int total = cards.size();
+        for (int idx = 0; idx < total; idx++) {
+            View card = cards.get(idx);
+            int row = idx / cols;
+            int col = idx % cols;
+
+            // Row 0 pressing UP goes to Done button
+            if (row == 0) {
+                card.setNextFocusUpId(doneBtn.getId());
+            }
+
+            // Last row pressing DOWN wraps to first row (col)
+            int nextDownIdx = idx + cols;
+            if (nextDownIdx >= total) {
+                int wrapIdx = Math.min(col, total - 1);
+                card.setNextFocusDownId(cards.get(wrapIdx).getId());
+            }
+        }
+
+        if (!cards.isEmpty()) {
+            doneBtn.setNextFocusDownId(cards.get(0).getId());
+        }
+
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        scrollLp.topMargin = dp(16);
+        scroll.addView(grid, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(scroll, scrollLp);
+
+        dialog.setContentView(root);
+
+        // Handle BACK key: apply selection and close if any selected, otherwise close
+        dialog.setOnKeyListener((d, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                applyAndDismiss.run();
+                return true;
+            }
+            return false;
+        });
+
+        // Focus first app tile on show
+        dialog.setOnShowListener(d -> {
+            if (!cards.isEmpty()) {
+                cards.get(0).requestFocus();
+            } else {
+                doneBtn.requestFocus();
+            }
+        });
+
+        dialog.show();
     }
 
     /** Work out every favorite's colors on a background thread, so the first focus on each app costs nothing. */
