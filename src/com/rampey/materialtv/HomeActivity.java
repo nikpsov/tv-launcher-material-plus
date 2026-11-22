@@ -817,7 +817,7 @@ public class HomeActivity extends Activity {
             String[] dev = inputDevices.get(p);
             if (dev != null) names.append('|').append(dev[0]);
         }
-        String key = TextUtils.join(",", present) + names;
+        String key = (present.isEmpty() ? ":empty:" : TextUtils.join(",", present)) + names;
         if (key.equals(dockKey) && dock.getChildCount() > 0) {
             if (!showingApps && reorderingPkg == null) {
                 dock.post(() -> {
@@ -839,11 +839,34 @@ public class HomeActivity extends Activity {
         dockBadges.clear();
         deviceDots.clear();
         warmPalettes(present);
-        int n = Math.max(1, present.size());
         float screenDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
-        float countForSize = n > 6 ? 6.4f : Math.min(6, n);
-        float inner = screenDp - 2 * (SIDE + DOCK_PAD + SCROLL_PAD) - (Math.min(6, n) - 1) * GAP - Math.min(6, n) * 2 * RING;
+        float countForSize = present.size() > 6 ? 6.4f : 6f;
+        float inner = screenDp - 2 * (SIDE + DOCK_PAD + SCROLL_PAD) - 5 * GAP - 12 * RING;
         int tileDp = (int) Math.max(92, Math.min(220, inner / countForSize));
+
+        if (present.isEmpty()) {
+            View plusTile = buildPlusTile(tileDp);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            dock.addView(plusTile, lp);
+            if (animate) arrive(plusTile, 0);
+            View c = cardFromHolder(plusTile);
+            if (c != null) {
+                c.setNextFocusLeftId(c.getId());
+                c.setNextFocusRightId(c.getId());
+                c.setNextFocusDownId(c.getId());
+            }
+            if (!showingApps && reorderingPkg == null) {
+                dock.post(() -> {
+                    if (!showingApps && dock != null && dock.getChildCount() > 0 && reorderingPkg == null) {
+                        if (c != null) c.requestFocus();
+                        else dock.getChildAt(0).requestFocus();
+                    }
+                });
+            }
+            dock.post(this::updateScrollScrims);
+            return;
+        }
+
         int i = 0;
         for (String pkg : present) {
             Intent intent = dockIntent(pkg);
@@ -1107,6 +1130,113 @@ public class HomeActivity extends Activity {
         return holder;
     }
 
+    /** An invitation tile when dock has no pinned apps: 16:9 card with an add icon. */
+    private View buildPlusTile(int widthDp) {
+        int w = dp(widthDp);
+        int h = w * 9 / 16;
+        int radius = dp(Focus.MEDIA);
+        LinearLayout holder = new LinearLayout(this);
+        holder.setOrientation(LinearLayout.VERTICAL);
+        holder.setClipChildren(false);
+        holder.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        final CharSequence label = "Добавить приложение";
+
+        FrameLayout card = new FrameLayout(this);
+        card.setId(View.generateViewId());
+        card.setFocusable(true);
+        card.setClickable(true);
+        card.setTag(":plus:");
+        GradientDrawable cardShape = new GradientDrawable();
+        cardShape.setCornerRadius(radius);
+        cardShape.setColor(palette.containerHigh);
+        card.setBackground(cardShape);
+        card.setClipToOutline(true);
+
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageResource(R.drawable.ic_add);
+        image.setImageTintList(ColorStateList.valueOf(palette.onSurfaceVariant));
+        card.addView(image, new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER));
+        card.setContentDescription(label);
+
+        GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadius(radius + dp(RING));
+        ring.setColor(Color.TRANSPARENT);
+        FrameLayout ringFrame = new FrameLayout(this);
+        ringFrame.setClipChildren(false);
+        ringFrame.setPadding(dp(RING), dp(RING), dp(RING), dp(RING));
+        ringFrame.setBackground(ring);
+        ringFrame.addView(card, new FrameLayout.LayoutParams(w, h));
+
+        final ValueAnimator[] ringAnim = new ValueAnimator[1];
+        final ObjectAnimator[] cornerAnim = new ObjectAnimator[1];
+
+        card.setOnClickListener(v -> showPinPickerDialog());
+
+        TextView caption = text(label, 15, palette.onSurfaceVariant, 560);
+        caption.setGravity(Gravity.CENTER_HORIZONTAL);
+        caption.setSingleLine(true);
+        caption.setEllipsize(TextUtils.TruncateAt.END);
+        caption.setAlpha(0f);
+
+        card.setOnFocusChangeListener((v, focused) -> {
+            float scale = focused ? 1.10f : 1f;
+            ringFrame.animate().scaleX(scale).scaleY(scale)
+                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
+            card.setOutlineSpotShadowColor(palette.primary);
+            card.setOutlineAmbientShadowColor(palette.primary);
+            card.animate().translationZ(focused ? dp(14) : 0)
+                    .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
+
+            if (cornerAnim[0] != null) cornerAnim[0].cancel();
+            float targetRadius = focused ? radius * 0.62f : radius;
+            cornerAnim[0] = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), targetRadius);
+            cornerAnim[0].setDuration(Motion.FAST_SPATIAL_MS);
+            cornerAnim[0].setInterpolator(Motion.FAST_SPATIAL);
+            cornerAnim[0].addUpdateListener(anim -> card.invalidateOutline());
+            cornerAnim[0].start();
+
+            ring.setCornerRadius(targetRadius + dp(RING));
+            fadeRing(ringAnim, ring, focused);
+
+            caption.animate().cancel();
+            if (focused) {
+                caption.setVisibility(View.VISIBLE);
+                caption.animate().alpha(1f).setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.FAST_EFFECTS_MS).start();
+            } else {
+                caption.animate().alpha(0f).setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.FAST_EFFECTS_MS)
+                        .withEndAction(() -> caption.setVisibility(View.GONE)).start();
+            }
+            caption.setTextColor(focused ? palette.onSurface : palette.onSurfaceVariant);
+            image.setImageTintList(ColorStateList.valueOf(focused ? palette.inverseOnSurface : palette.onSurfaceVariant));
+            cardShape.setColor(focused ? palette.inverseSurface : palette.containerHigh);
+
+            if (focused) {
+                lastFocusedDockPkg = ":plus:";
+                scrollDockToTile(holder);
+                onTileFocused(null, label, null);
+            }
+        });
+
+        LinearLayout captionRow = new LinearLayout(this);
+        captionRow.setOrientation(LinearLayout.HORIZONTAL);
+        captionRow.setGravity(Gravity.CENTER);
+        captionRow.setClipChildren(false);
+        caption.setPadding(0, 0, 0, 0);
+        caption.setMaxWidth(w + dp(48) - dp(30));
+        caption.setVisibility(View.GONE);
+        captionRow.addView(caption, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        holder.addView(ringFrame, new LinearLayout.LayoutParams(w + dp(2 * RING), h + dp(2 * RING)));
+        LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(w + dp(48), dp(32));
+        rl.topMargin = dp(8);
+        rl.leftMargin = -dp(24);
+        rl.rightMargin = -dp(24);
+        holder.addView(captionRow, rl);
+        return holder;
+    }
+
     /** The focus ring fades in (fast effects) in the palette's focus color instead of snapping on. */
     private void fadeRing(ValueAnimator[] ringAnim, GradientDrawable ring, boolean focused) {
         if (ringAnim[0] != null) ringAnim[0].cancel();
@@ -1183,19 +1313,28 @@ public class HomeActivity extends Activity {
 
     /** Runs once focus has rested for a moment: the title, the background shape and the colors follow the app. */
     private void applyFocus(String pkg, CharSequence label, Drawable art) {
-        if (pkg == null) return;
-        if (!showingApps && !TextUtils.equals(focusTitle.getText(), label)) {
+        if (!showingApps && label != null && !TextUtils.equals(focusTitle.getText(), label)) {
             focusTitle.setTypeface(titleFont(820));
             focusTitle.setText(label);
             focusTitle.setAlpha(0f);
             focusTitle.setTranslationY(dp(12));
             focusTitle.animate().alpha(1f).translationY(0).setInterpolator(Motion.DEFAULT_SPATIAL).setDuration(Motion.DEFAULT_SPATIAL_MS).start();
         }
-        morphShape(pkg);
-        retint(paletteFor(pkg, art));
+        if (pkg != null) {
+            morphShape(pkg);
+            retint(paletteFor(pkg, art));
+        } else {
+            cookie.morphTo(4, 0.18f, 1f);
+            ValueAnimator a = ValueAnimator.ofFloat(0f, 1f).setDuration(Motion.DEFAULT_SPATIAL_MS);
+            a.setInterpolator(Motion.DEFAULT_SPATIAL);
+            a.addUpdateListener(an -> cookie.setProgress((float) an.getAnimatedValue()));
+            a.start();
+            retint(Palette.of(Palette.DEFAULT_SEED));
+        }
     }
 
     private Palette paletteFor(String pkg, Drawable art) {
+        if (pkg == null || art == null) return Palette.of(Palette.DEFAULT_SEED);
         Integer seed = seedCache.get(pkg);
         if (seed == null) {
             seed = Palette.seedFrom(art);
@@ -1207,6 +1346,10 @@ public class HomeActivity extends Activity {
             paletteCache.put(seed, p);
         }
         return p;
+    }
+
+    private void showPinPickerDialog() {
+        showApps();
     }
 
     /** Work out every favorite's colors on a background thread, so the first focus on each app costs nothing. */
