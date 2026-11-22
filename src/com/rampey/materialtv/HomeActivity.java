@@ -79,15 +79,9 @@ import java.util.regex.Pattern;
 
 /**
  * A Material 3 Expressive home screen for TV: the background and accents take their color from the app in focus,
- * one dock of your most-used apps, everything else on an Apps page. Voice requests use Gemini through OpenRouter.
+ * one dock of your most-used apps, everything else on an Apps page.
  */
 public class HomeActivity extends Activity {
-    private static java.lang.ref.WeakReference<HomeActivity> liveHome = new java.lang.ref.WeakReference<>(null);
-    static volatile long lastLaunchAt;
-    static Palette voicePalette() {
-        HomeActivity home = liveHome.get();
-        return home == null ? null : home.palette;
-    }
 
 
     private static final int SIDE = 48, DOCK_PAD = 8, SCROLL_PAD = 18, GAP = 14, RING = 6, APP_MARGIN = 9;
@@ -291,7 +285,6 @@ public class HomeActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        liveHome = new java.lang.ref.WeakReference<>(this);
         pm = getPackageManager();
         titleFont(820);
         setContentView(buildRoot());
@@ -345,7 +338,6 @@ public class HomeActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (pendingResume != null) pendingResume.cancel();
-        if (liveHome.get() == this) liveHome.clear();
         stopNowPlaying();
         if (wifiCallback != null) {
             try {
@@ -496,13 +488,7 @@ public class HomeActivity extends Activity {
                 index -> {
                     if (index == 0) showHome();
                     else if (index == 1) showApps();
-                    else {
-                        try {
-                            startActivity(new Intent(Settings.ACTION_SETTINGS));
-                        } catch (ActivityNotFoundException e) {
-                            launch(new Intent(this, TvControlActivity.class));
-                        }
-                    }
+                    else launch(new Intent(Settings.ACTION_SETTINGS));
                 });
         nav.select(0);
 
@@ -544,11 +530,7 @@ public class HomeActivity extends Activity {
             try {
                 startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS));
             } catch (ActivityNotFoundException e2) {
-                try {
-                    startActivity(new Intent(Settings.ACTION_SETTINGS));
-                } catch (ActivityNotFoundException e3) {
-                    launch(new Intent(this, TvControlActivity.class));
-                }
+                launch(new Intent(Settings.ACTION_SETTINGS));
             }
         }
     }
@@ -1058,8 +1040,10 @@ public class HomeActivity extends Activity {
             ringFrame.animate().scaleX(scale).scaleY(scale)
                     .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
             // A glow in the app's own color (TV focus guidance) instead of a dark shadow.
-            card.setOutlineSpotShadowColor(palette.primary);
-            card.setOutlineAmbientShadowColor(palette.primary);
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                card.setOutlineSpotShadowColor(palette.primary);
+                card.setOutlineAmbientShadowColor(palette.primary);
+            }
             card.animate().translationZ(focused || activeMove ? dp(14) : 0)
                     .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
 
@@ -1198,8 +1182,10 @@ public class HomeActivity extends Activity {
             float scale = focused ? 1.10f : 1f;
             ringFrame.animate().scaleX(scale).scaleY(scale)
                     .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            card.setOutlineSpotShadowColor(palette.primary);
-            card.setOutlineAmbientShadowColor(palette.primary);
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                card.setOutlineSpotShadowColor(palette.primary);
+                card.setOutlineAmbientShadowColor(palette.primary);
+            }
             card.animate().translationZ(focused ? dp(14) : 0)
                     .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
 
@@ -1300,8 +1286,10 @@ public class HomeActivity extends Activity {
             float scale = focused ? 1.10f : 1f;
             ringFrame.animate().scaleX(scale).scaleY(scale)
                     .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            card.setOutlineSpotShadowColor(palette.primary);
-            card.setOutlineAmbientShadowColor(palette.primary);
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                card.setOutlineSpotShadowColor(palette.primary);
+                card.setOutlineAmbientShadowColor(palette.primary);
+            }
             card.animate().translationZ(focused ? dp(14) : 0)
                     .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
 
@@ -1547,8 +1535,10 @@ public class HomeActivity extends Activity {
             float scale = focused ? 1.10f : 1f;
             ringFrame.animate().scaleX(scale).scaleY(scale)
                     .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            card.setOutlineSpotShadowColor(palette.primary);
-            card.setOutlineAmbientShadowColor(palette.primary);
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                card.setOutlineSpotShadowColor(palette.primary);
+                card.setOutlineAmbientShadowColor(palette.primary);
+            }
             card.animate().translationZ(focused ? dp(14) : 0)
                     .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
 
@@ -2600,36 +2590,4 @@ public class HomeActivity extends Activity {
     private int dp(float value) {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics()));
     }
-    static void beep(boolean start) {
-        final int rate = 44100;
-        double[] notes = start ? new double[] {880.0, 1318.5} : new double[] {1318.5, 880.0};   // A5 and E6
-        float amp = start ? 0.8f : 0.55f;
-        int len = rate * 26 / 100;
-        short[] pcm = new short[len];
-        for (int k = 0; k < notes.length; k++) {
-            int from = k * rate * 8 / 100;   // second note 80 ms after the first
-            for (int i = from; i < len; i++) {
-                double t = (i - from) / (double) rate;
-                double env = Math.min(1.0, t / 0.004) * Math.exp(-t / 0.07);   // quick attack, bell-like decay
-                double w = Math.sin(2 * Math.PI * notes[k] * t) + 0.25 * Math.sin(4 * Math.PI * notes[k] * t);
-                int v = pcm[i] + (int) (w / 1.25 * env * amp * 32767 * 0.7);
-                pcm[i] = (short) Math.max(-32768, Math.min(32767, v));
-            }
-        }
-        try {
-            android.media.AudioTrack track = new android.media.AudioTrack.Builder()
-                    .setAudioAttributes(new android.media.AudioAttributes.Builder()
-                            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
-                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-                    .setAudioFormat(new android.media.AudioFormat.Builder().setSampleRate(rate)
-                            .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
-                            .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).build())
-                    .setTransferMode(android.media.AudioTrack.MODE_STATIC).setBufferSizeInBytes(len * 2).build();
-            track.write(pcm, 0, len);
-            track.play();
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(track::release, 1000);
-        } catch (RuntimeException ignored) {
-        }
-    }
-
 }

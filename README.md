@@ -5,7 +5,7 @@
 **A fluid launcher for Android TV and Google TV.**
 
 Your most-used apps, in the order you use them, in colors that follow the app you're on.
-No ads, no recommendations. Optional Gemini voice with your own OpenRouter key.
+No ads, no recommendations. Fully offline, lightweight, and private.
 
 [![Download APK](https://img.shields.io/badge/Download-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/0xRampey/material-tv-launcher/releases/latest/download/material-tv-launcher.apk)
 
@@ -30,7 +30,7 @@ No ads, no recommendations. Optional Gemini voice with your own OpenRouter key.
   morph as you move, a top-bar strip, neighbors that make room, a morphing loader when an app is slow,
   and a Google Sans Flex clock whose weight follows the time of day.
 - **Fluid motion.** Animations stay in sync with your TV's refresh rate. Tested on a quad-core TV chip.
-  The voice build used about 67 MB of memory idle on our test TV. Home's animations stop while you're in another app.
+  Uses about 40 MB of memory idle on our test TV. Home's animations stop while you're in another app.
 
 **And a screensaver that follows the sun.** *Material TV Clock* draws a fresh Material You-style wallpaper
 every hour: indigo at night, peach at sunrise, sky blue at midday, orange at sunset.
@@ -50,21 +50,17 @@ Follow the [Quick start](AGENTS.md#quick-start) yourself or [install with your c
 
 ## Supported TVs
 
-Any TV running Android TV or Google TV on **Android 12 or newer**, from any brand. Tested on Google TV. Untested:
+Any TV running Android TV or Google TV on **Android 9 or newer** (API 28+), from any brand. Tested on Google TV. Untested:
 classic Android TV (the Home button should work the same way) and Amazon Fire TV (Fire OS, which is based on
 Android). Not supported: Samsung (Tizen) and LG (webOS).
-
-This release packages the ARMv7 runtime and needs a TV that supports 32-bit ARM apps.
 
 Tried it on your TV? A short report with a screenshot helps others, see [Contributing](#contributing).
 
 ## Privacy
 
-Voice is optional. When enabled, a voice request sends recorded
-audio, installed app names, app-use ranking, foreground app, Now Playing metadata, HDMI inputs, volume, time,
-and up to four recent voice exchanges to Gemini through OpenRouter. No screenshots, screen text or personal
-watch/listening history are sent. Commands use Android intents and media controls; the assistant does not navigate app screens.
-Your key stays on your TV and pays for the requests. Voice needs an internet connection; Home still works offline.
+The launcher works completely offline. It requires no `INTERNET` permission and no audio recording.
+It reads installed app packages and on-device usage stats only to build the dock, and media metadata
+only to display Now Playing information. Nothing leaves the TV.
 
 See [permissions and verification](AGENTS.md#privacy).
 
@@ -79,7 +75,5 @@ are welcome too: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Apache 2.0, see [`LICENSE`](LICENSE). Bundled:
 [material-color-utilities](https://github.com/material-foundation/material-color-utilities) (Apache 2.0) and
-[Google Sans Flex](https://github.com/googlefonts/googlesans-flex) (SIL Open Font License 1.1).
-Voice also bundles sherpa-onnx (Apache 2.0), ONNX Runtime and the Silero speech detector (MIT);
-see [voice dependencies and notices](third_party/sherpa-onnx/README.md). "Google",
+[Google Sans Flex](https://github.com/googlefonts/googlesans-flex) (SIL Open Font License 1.1). "Google",
 "Google Sans" and "Material Design" belong to Google; this project is not affiliated with or endorsed by Google.

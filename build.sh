@@ -15,13 +15,12 @@ fi
 BT="$ANDROID_HOME/build-tools/${BUILD_TOOLS:-34.0.0}"
 JAR="$ANDROID_HOME/platforms/android-34/android.jar"
 for f in "$BT/aapt2" "$BT/d8" "$JAR"; do [ -e "$f" ] || { echo "missing $f (set ANDROID_HOME / BUILD_TOOLS)"; exit 1; }; done
-python3 scripts/prepare-voice.py --check
 OUT=build
 rm -rf "$OUT"; mkdir -p "$OUT/res" "$OUT/gen" "$OUT/classes" "$OUT/dex"
 
 "$BT/aapt2" compile --dir res -o "$OUT/res/compiled.zip"
 "$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml -o "$OUT/base.apk" \
-  -A assets -0 ttf --java "$OUT/gen" --min-sdk-version 30 --target-sdk-version 34 \
+  -A assets -0 ttf --java "$OUT/gen" --min-sdk-version 28 --target-sdk-version 34 \
   --version-code "${VERSION_CODE:-219}" --version-name "${VERSION_NAME:-0.2.0}" "$OUT/res/compiled.zip"
 
 # JDK core classes (for lambdas) plus android.jar for the Android API; d8 desugars to the TV's level.
@@ -29,10 +28,9 @@ if ! javac -encoding UTF-8 -nowarn --release 17 -cp "$JAR" -d "$OUT/classes" $(f
   cat "$OUT/javac.log"; echo "javac failed"; exit 1
 fi
 
-"$BT/d8" --min-api 30 --lib "$JAR" --output "$OUT/dex" $(find "$OUT/classes" -name '*.class')
+"$BT/d8" --min-api 28 --lib "$JAR" --output "$OUT/dex" $(find "$OUT/classes" -name '*.class')
 cp "$OUT/base.apk" "$OUT/unsigned.apk"
 (cd "$OUT/dex" && zip -q -j ../unsigned.apk classes.dex)
-(cd jni && zip -q ../"$OUT"/unsigned.apk lib/armeabi-v7a/libonnxruntime.so lib/armeabi-v7a/libsherpa-onnx-jni.so)
 "$BT/zipalign" -f -p 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
 
 KS="${KEYSTORE:-$HOME/.android/debug.keystore}"
