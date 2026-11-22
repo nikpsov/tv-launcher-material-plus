@@ -272,21 +272,26 @@ public class HomeActivity extends Activity {
                 }).start();
     }
 
+    private final SimpleDateFormat timeFormat12 = new SimpleDateFormat("h:mm", Locale.getDefault());
+    private final SimpleDateFormat timeFormat24 = new SimpleDateFormat("H:mm", Locale.getDefault());
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat("EEEE, MMMM d", Locale.getDefault());
+
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             Date now = new Date();
             boolean is24 = android.text.format.DateFormat.is24HourFormat(HomeActivity.this);
-            String time = new SimpleDateFormat(is24 ? "H:mm" : "h:mm", Locale.getDefault()).format(now);
+            String time = (is24 ? timeFormat24 : timeFormat12).format(now);
             if (clock.getText().length() == 0) {
                 clock.setText(time);
                 clock.setTypeface(clockFont(clockWeight()));
             } else if (!time.contentEquals(clock.getText())) {
                 changeClock(time);
             }
-            String dateStr = new SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(now);
+            String dateStr = dateFormat.format(now);
             date.setTypeface(font(500, dateStr));
             date.setText(dateStr);
-            handler.postDelayed(this, 15_000);
+            long msUntilNextMinute = 60_000 - (System.currentTimeMillis() % 60_000) + 200;
+            handler.postDelayed(this, Math.min(15_000, msUntilNextMinute));
         }
     };
 

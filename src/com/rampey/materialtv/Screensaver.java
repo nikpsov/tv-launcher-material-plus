@@ -46,6 +46,9 @@ public class Screensaver extends DreamService {
     private long last;
     private boolean running;
     private int minuteShift;
+    private final SimpleDateFormat timeFormat12 = new SimpleDateFormat("h:mm", Locale.getDefault());
+    private final SimpleDateFormat timeFormat24 = new SimpleDateFormat("H:mm", Locale.getDefault());
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat("EEEE, MMMM d", Locale.getDefault());
 
     private final Runnable drift = new Runnable() {
         @Override public void run() {
@@ -63,8 +66,8 @@ public class Screensaver extends DreamService {
         @Override public void run() {
             Date d = new Date();
             boolean is24 = android.text.format.DateFormat.is24HourFormat(Screensaver.this);
-            clock.setText(new SimpleDateFormat(is24 ? "H:mm" : "h:mm", Locale.getDefault()).format(d));
-            date.setText(new SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(d));
+            clock.setText((is24 ? timeFormat24 : timeFormat12).format(d));
+            date.setText(dateFormat.format(d));
             updateSong();
             // Move the clock block slightly each minute (no fixed pixels on the panel for hours).
             int m = (int) (System.currentTimeMillis() / 60_000L);
