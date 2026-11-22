@@ -165,6 +165,7 @@ public class HomeActivity extends Activity {
     private WavyProgress nowProgress;
     private final Map<String, EqualizerBadge> dockBadges = new HashMap<>();
     private final Map<String, View> deviceDots = new HashMap<>();   // input id -> "on" dot
+    private final Map<String, Drawable> inputBannerCache = new HashMap<>();
     private final android.media.tv.TvInputManager.TvInputCallback inputCallback = new android.media.tv.TvInputManager.TvInputCallback() {
         @Override public void onInputStateChanged(String inputId, int state) {
             showDeviceState(inputId, state);
@@ -770,6 +771,8 @@ public class HomeActivity extends Activity {
      * large Material icon in a light tone of the same hue. No text (the name sits under the tile) and no logos.
      */
     private Drawable inputBanner(String label) {
+        Drawable cached = inputBannerCache.get(label);
+        if (cached != null) return cached;
         String l = label.toLowerCase(Locale.ROOT);
         int brand = 0xFF5F6368;
         if (l.contains("playstation") || l.matches(".*\\bps[2-5]\\b.*")) brand = 0xFF0047AB;
@@ -785,7 +788,9 @@ public class HomeActivity extends Activity {
         int size = 250;
         d.setBounds((640 - size) / 2, (360 - size) / 2, (640 + size) / 2, (360 + size) / 2);
         d.draw(c);
-        return new android.graphics.drawable.BitmapDrawable(getResources(), b);
+        Drawable result = new android.graphics.drawable.BitmapDrawable(getResources(), b);
+        inputBannerCache.put(label, result);
+        return result;
     }
 
     private Intent dockIntent(String key) {
