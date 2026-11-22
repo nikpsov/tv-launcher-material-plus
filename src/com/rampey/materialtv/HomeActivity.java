@@ -986,16 +986,18 @@ public class HomeActivity extends Activity {
         }
     }
 
-    /** A 16:9 card: the app's TV banner, or its icon on a tonal card, with the name underneath. */
-    private View tile(String pkg, Intent intent, int widthDp, boolean inDock) {
-        int w = dp(widthDp);
-        int h = w * 9 / 16;
-        int radius = dp(Focus.MEDIA);
-        LinearLayout holder = new LinearLayout(this);
-        holder.setOrientation(LinearLayout.VERTICAL);
-        holder.setClipChildren(false);
-        holder.setGravity(Gravity.CENTER_HORIZONTAL);
+    private static class AppEntry {
+        final CharSequence label;
+        final Drawable banner;
+        final Drawable icon;
+        AppEntry(CharSequence label, Drawable banner, Drawable icon) {
+            this.label = label;
+            this.banner = banner;
+            this.icon = icon;
+        }
+    }
 
+    private AppEntry loadAppEntry(String pkg) {
         CharSequence name = pkg;
         Drawable banner = null;
         Drawable icon = null;
@@ -1003,15 +1005,44 @@ public class HomeActivity extends Activity {
         if (device != null) {
             name = device[0];
             banner = inputBanner(device[0]);
-        } else try {
-            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
-            name = pm.getApplicationLabel(ai);
-            banner = pm.getApplicationBanner(ai);
-            if (banner == null) icon = pm.getApplicationIcon(ai);
-        } catch (PackageManager.NameNotFoundException ignored) {
+        } else {
+            try {
+                ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                name = pm.getApplicationLabel(ai);
+                banner = pm.getApplicationBanner(ai);
+                if (banner == null) icon = pm.getApplicationIcon(ai);
+            } catch (PackageManager.NameNotFoundException ignored) {
+            }
         }
-        final CharSequence label = name;
-        final Drawable art = banner != null ? banner : icon;
+        return new AppEntry(name, banner, icon);
+    }
+
+    private static class CardComponents {
+        final LinearLayout holder;
+        final FrameLayout ringFrame;
+        final GradientDrawable ring;
+        final FrameLayout card;
+        final GradientDrawable cardShape;
+        final ImageView image;
+        CardComponents(LinearLayout holder, FrameLayout ringFrame, GradientDrawable ring,
+                       FrameLayout card, GradientDrawable cardShape, ImageView image) {
+            this.holder = holder;
+            this.ringFrame = ringFrame;
+            this.ring = ring;
+            this.card = card;
+            this.cardShape = cardShape;
+            this.image = image;
+        }
+    }
+
+    private CardComponents buildCardBase(String pkg, CharSequence label, Drawable banner, Drawable icon, int widthDp) {
+        int w = dp(widthDp);
+        int h = w * 9 / 16;
+        int radius = dp(Focus.MEDIA);
+        LinearLayout holder = new LinearLayout(this);
+        holder.setOrientation(LinearLayout.VERTICAL);
+        holder.setClipChildren(false);
+        holder.setGravity(Gravity.CENTER_HORIZONTAL);
 
         FrameLayout card = new FrameLayout(this);
         card.setId(View.generateViewId());
@@ -1023,6 +1054,7 @@ public class HomeActivity extends Activity {
         cardShape.setColor(banner != null ? Color.TRANSPARENT : palette.containerHigh);
         card.setBackground(cardShape);
         card.setClipToOutline(true);
+
         ImageView image = new ImageView(this);
         if (banner != null) {
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -1035,16 +1067,73 @@ public class HomeActivity extends Activity {
         }
         card.setContentDescription(label);
 
-        // Material focus: the card grows with a little spring, its corners tighten, and a ring in the
-        // accent color appears just outside it. The whole screen re-tints to the app's color.
         GradientDrawable ring = new GradientDrawable();
         ring.setCornerRadius(radius + dp(RING));
         ring.setColor(Color.TRANSPARENT);
         FrameLayout ringFrame = new FrameLayout(this);
         ringFrame.setClipChildren(false);
         ringFrame.setPadding(dp(RING), dp(RING), dp(RING), dp(RING));
-        ringFrame.setBackground(ring);   // the ring sits in the gap around the card; badges draw above it
+        ringFrame.setBackground(ring);
         ringFrame.addView(card, new FrameLayout.LayoutParams(w, h));
+
+        return new CardComponents(holder, ringFrame, ring, card, cardShape, image);
+    }
+
+    private void applyFocusStyle(View card, View ringFrame, GradientDrawable cardShape,
+                                 GradientDrawable ring, ValueAnimator[] ringAnim,
+                                 ObjectAnimator[] cornerAnim, float radius, boolean focused) {
+        applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, radius, focused, false);
+    }
+
+    private void applyFocusStyle(View card, View ringFrame, GradientDrawable cardShape,
+                                 GradientDrawable ring, ValueAnimator[] ringAnim,
+                                 ObjectAnimator[] cornerAnim, float radius, boolean focused, boolean activeMove) {
+        float scale = activeMove ? 1.14f : (focused ? 1.10f : 1f);
+        ringFrame.animate().scaleX(scale).scaleY(scale)
+                .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            card.setOutlineSpotShadowColor(palette.primary);
+            card.setOutlineAmbientShadowColor(palette.primary);
+        }
+        card.animate().translationZ(focused || activeMove ? dp(14) : 0)
+                .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
+
+        if (cornerAnim != null) {
+            if (cornerAnim[0] != null) cornerAnim[0].cancel();
+            float targetRadius = (focused || activeMove) ? radius * 0.62f : radius;
+            cornerAnim[0] = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), targetRadius);
+            cornerAnim[0].setDuration(Motion.FAST_SPATIAL_MS);
+            cornerAnim[0].setInterpolator(Motion.FAST_SPATIAL);
+            cornerAnim[0].addUpdateListener(anim -> card.invalidateOutline());
+            cornerAnim[0].start();
+            ring.setCornerRadius(targetRadius + dp(RING));
+        }
+
+        if (activeMove) {
+            if (ringAnim != null && ringAnim[0] != null) ringAnim[0].cancel();
+            ring.setColor(palette.primary);
+            ring.setStroke(0, Color.TRANSPARENT);
+            ring.setAlpha(255);
+        } else if (ringAnim != null) {
+            fadeRing(ringAnim, ring, focused);
+        }
+    }
+
+    /** A 16:9 card: the app's TV banner, or its icon on a tonal card, with the name underneath. */
+    private View tile(String pkg, Intent intent, int widthDp, boolean inDock) {
+        int w = dp(widthDp);
+        int h = w * 9 / 16;
+        int radius = dp(Focus.MEDIA);
+        AppEntry entry = loadAppEntry(pkg);
+        final CharSequence label = entry.label;
+        final Drawable art = entry.banner != null ? entry.banner : entry.icon;
+
+        CardComponents comp = buildCardBase(pkg, label, entry.banner, entry.icon, widthDp);
+        LinearLayout holder = comp.holder;
+        FrameLayout ringFrame = comp.ringFrame;
+        GradientDrawable ring = comp.ring;
+        FrameLayout card = comp.card;
+        GradientDrawable cardShape = comp.cardShape;
 
         final ValueAnimator[] ringAnim = new ValueAnimator[1];
         final ObjectAnimator[] cornerAnim = new ObjectAnimator[1];
@@ -1079,34 +1168,9 @@ public class HomeActivity extends Activity {
 
         card.setOnFocusChangeListener((v, focused) -> {
             boolean activeMove = inDock && pkg.equals(reorderingPkg);
-            float scale = activeMove ? 1.14f : (focused ? 1.10f : 1f);
-            ringFrame.animate().scaleX(scale).scaleY(scale)
-                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            // A glow in the app's own color (TV focus guidance) instead of a dark shadow.
-            if (android.os.Build.VERSION.SDK_INT >= 29) {
-                card.setOutlineSpotShadowColor(palette.primary);
-                card.setOutlineAmbientShadowColor(palette.primary);
-            }
-            card.animate().translationZ(focused || activeMove ? dp(14) : 0)
-                    .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
-
-            if (cornerAnim[0] != null) cornerAnim[0].cancel();
-            float targetRadius = (focused || activeMove) ? radius * 0.62f : radius;
-            cornerAnim[0] = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), targetRadius);
-            cornerAnim[0].setDuration(Motion.FAST_SPATIAL_MS);
-            cornerAnim[0].setInterpolator(Motion.FAST_SPATIAL);
-            cornerAnim[0].addUpdateListener(anim -> card.invalidateOutline());
-            cornerAnim[0].start();
-
-            ring.setCornerRadius(targetRadius + dp(RING));
+            applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, radius, focused, activeMove);
             if (activeMove) {
-                if (ringAnim[0] != null) ringAnim[0].cancel();
-                ring.setColor(palette.primary);
-                ring.setStroke(0, Color.TRANSPARENT);
-                ring.setAlpha(255);
                 holder.setTranslationY(-dp(10));
-            } else {
-                fadeRing(ringAnim, ring, focused);
             }
             caption.animate().cancel();
             if (inDock && focused) {
@@ -1135,7 +1199,7 @@ public class HomeActivity extends Activity {
         caption.setPadding(0, 0, 0, 0);
         caption.setMaxWidth(w + dp(48) - dp(30));
         if (inDock) caption.setVisibility(View.GONE);
-        if (inDock && device != null) {
+        if (inDock && inputDevices.containsKey(pkg)) {
             View dot = new View(this);
             GradientDrawable dotShape = new GradientDrawable();
             dotShape.setShape(GradientDrawable.OVAL);
@@ -1222,26 +1286,7 @@ public class HomeActivity extends Activity {
         caption.setAlpha(0f);
 
         card.setOnFocusChangeListener((v, focused) -> {
-            float scale = focused ? 1.10f : 1f;
-            ringFrame.animate().scaleX(scale).scaleY(scale)
-                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            if (android.os.Build.VERSION.SDK_INT >= 29) {
-                card.setOutlineSpotShadowColor(palette.primary);
-                card.setOutlineAmbientShadowColor(palette.primary);
-            }
-            card.animate().translationZ(focused ? dp(14) : 0)
-                    .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
-
-            if (cornerAnim[0] != null) cornerAnim[0].cancel();
-            float targetRadius = focused ? radius * 0.62f : radius;
-            cornerAnim[0] = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), targetRadius);
-            cornerAnim[0].setDuration(Motion.FAST_SPATIAL_MS);
-            cornerAnim[0].setInterpolator(Motion.FAST_SPATIAL);
-            cornerAnim[0].addUpdateListener(anim -> card.invalidateOutline());
-            cornerAnim[0].start();
-
-            ring.setCornerRadius(targetRadius + dp(RING));
-            fadeRing(ringAnim, ring, focused);
+            applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, radius, focused);
 
             caption.animate().cancel();
             if (focused) {
@@ -1284,8 +1329,7 @@ public class HomeActivity extends Activity {
     private View buildCompactPlusTile(int tileDp) {
         int w = dp(tileDp);
         int h = w * 9 / 16;
-        int btnSize = dp(56);
-        if (btnSize > h) btnSize = h;
+        int btnSize = Math.min(dp(56), h);
 
         LinearLayout holder = new LinearLayout(this);
         holder.setOrientation(LinearLayout.VERTICAL);
@@ -1322,21 +1366,12 @@ public class HomeActivity extends Activity {
         ringFrame.addView(card, new FrameLayout.LayoutParams(btnSize, btnSize));
 
         final ValueAnimator[] ringAnim = new ValueAnimator[1];
+        final ObjectAnimator[] cornerAnim = new ObjectAnimator[1];
 
         card.setOnClickListener(v -> showPinPickerDialog());
 
         card.setOnFocusChangeListener((v, focused) -> {
-            float scale = focused ? 1.10f : 1f;
-            ringFrame.animate().scaleX(scale).scaleY(scale)
-                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            if (android.os.Build.VERSION.SDK_INT >= 29) {
-                card.setOutlineSpotShadowColor(palette.primary);
-                card.setOutlineAmbientShadowColor(palette.primary);
-            }
-            card.animate().translationZ(focused ? dp(14) : 0)
-                    .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
-
-            fadeRing(ringAnim, ring, focused);
+            applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, btnSize / 2f, focused);
 
             cardShape.setColor(focused ? palette.inverseSurface : palette.containerHigh);
             image.setImageTintList(ColorStateList.valueOf(focused ? palette.inverseOnSurface : palette.onSurfaceVariant));
@@ -1475,45 +1510,15 @@ public class HomeActivity extends Activity {
         int w = dp(widthDp);
         int h = w * 9 / 16;
         int radius = dp(Focus.MEDIA);
-        LinearLayout holder = new LinearLayout(this);
-        holder.setOrientation(LinearLayout.VERTICAL);
-        holder.setClipChildren(false);
-        holder.setGravity(Gravity.CENTER_HORIZONTAL);
+        AppEntry entry = loadAppEntry(pkg);
+        final CharSequence label = entry.label;
 
-        CharSequence name = pkg;
-        Drawable banner = null;
-        Drawable icon = null;
-        try {
-            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
-            name = pm.getApplicationLabel(ai);
-            banner = pm.getApplicationBanner(ai);
-            if (banner == null) icon = pm.getApplicationIcon(ai);
-        } catch (PackageManager.NameNotFoundException ignored) {
-        }
-        final CharSequence label = name;
-
-        FrameLayout card = new FrameLayout(this);
-        card.setId(View.generateViewId());
-        card.setFocusable(true);
-        card.setClickable(true);
-        card.setTag(pkg);
-        GradientDrawable cardShape = new GradientDrawable();
-        cardShape.setCornerRadius(radius);
-        cardShape.setColor(banner != null ? Color.TRANSPARENT : palette.containerHigh);
-        card.setBackground(cardShape);
-        card.setClipToOutline(true);
-
-        ImageView image = new ImageView(this);
-        if (banner != null) {
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            image.setImageDrawable(banner);
-            card.addView(image, match());
-        } else {
-            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            image.setImageDrawable(icon);
-            card.addView(image, new FrameLayout.LayoutParams(h / 2, h / 2, Gravity.CENTER));
-        }
-        card.setContentDescription(label);
+        CardComponents comp = buildCardBase(pkg, label, entry.banner, entry.icon, widthDp);
+        LinearLayout holder = comp.holder;
+        FrameLayout ringFrame = comp.ringFrame;
+        GradientDrawable ring = comp.ring;
+        FrameLayout card = comp.card;
+        GradientDrawable cardShape = comp.cardShape;
 
         // Checkmark badge in the top-right corner
         FrameLayout checkBadge = new FrameLayout(this);
@@ -1556,15 +1561,6 @@ public class HomeActivity extends Activity {
                     v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start()).start();
         });
 
-        GradientDrawable ring = new GradientDrawable();
-        ring.setCornerRadius(radius + dp(RING));
-        ring.setColor(Color.TRANSPARENT);
-        FrameLayout ringFrame = new FrameLayout(this);
-        ringFrame.setClipChildren(false);
-        ringFrame.setPadding(dp(RING), dp(RING), dp(RING), dp(RING));
-        ringFrame.setBackground(ring);
-        ringFrame.addView(card, new FrameLayout.LayoutParams(w, h));
-
         final ValueAnimator[] ringAnim = new ValueAnimator[1];
         final ObjectAnimator[] cornerAnim = new ObjectAnimator[1];
 
@@ -1576,27 +1572,7 @@ public class HomeActivity extends Activity {
         caption.setAlpha(0.85f);
 
         card.setOnFocusChangeListener((v, focused) -> {
-            float scale = focused ? 1.10f : 1f;
-            ringFrame.animate().scaleX(scale).scaleY(scale)
-                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            if (android.os.Build.VERSION.SDK_INT >= 29) {
-                card.setOutlineSpotShadowColor(palette.primary);
-                card.setOutlineAmbientShadowColor(palette.primary);
-            }
-            card.animate().translationZ(focused ? dp(14) : 0)
-                    .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.DEFAULT_EFFECTS_MS).start();
-
-            if (cornerAnim[0] != null) cornerAnim[0].cancel();
-            float targetRadius = focused ? radius * 0.62f : radius;
-            cornerAnim[0] = ObjectAnimator.ofFloat(cardShape, "cornerRadius", cardShape.getCornerRadius(), targetRadius);
-            cornerAnim[0].setDuration(Motion.FAST_SPATIAL_MS);
-            cornerAnim[0].setInterpolator(Motion.FAST_SPATIAL);
-            cornerAnim[0].addUpdateListener(anim -> card.invalidateOutline());
-            cornerAnim[0].start();
-
-            ring.setCornerRadius(targetRadius + dp(RING));
-            fadeRing(ringAnim, ring, focused);
-
+            applyFocusStyle(card, ringFrame, cardShape, ring, ringAnim, cornerAnim, radius, focused);
             caption.animate().cancel();
             caption.animate().alpha(focused ? 1f : 0.85f).setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.FAST_EFFECTS_MS).start();
             caption.setTextColor(focused ? palette.onSurface : palette.onSurfaceVariant);
