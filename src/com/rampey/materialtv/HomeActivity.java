@@ -17,6 +17,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Outline;
@@ -1931,7 +1932,7 @@ public class HomeActivity extends Activity {
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(14), 0, dp(10), 0);
-        TextView label = text("NOW PLAYING", 12, palette.onSurfaceVariant, 760);
+        TextView label = text("СЕЙЧАС ИГРАЕТ", 12, palette.onSurfaceVariant, 760);
         label.setLetterSpacing(0.2f);
         words.addView(label);
         nowTitle = text("", 16, palette.onSurface, 760);
@@ -1958,10 +1959,7 @@ public class HomeActivity extends Activity {
         nowButton.setClickable(true);
         nowButton.setContentDescription("Play or pause");
         nowButton.setOnClickListener(v -> togglePlayback());
-        nowButton.setOnFocusChangeListener((v, focused) -> {
-            v.animate().scaleX(focused ? 1.12f : 1f).scaleY(focused ? 1.12f : 1f).setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            styleNowPlaying();
-        });
+        nowButton.setOnFocusChangeListener((v, focused) -> styleNowPlaying());
         card.addView(nowButton, new LinearLayout.LayoutParams(dp(52), dp(52)));
         styleNowPlaying();
         return card;
@@ -2096,6 +2094,7 @@ public class HomeActivity extends Activity {
     private PlaybackState liveState;
     private CharSequence lastTitle, lastArtist;
     private Bitmap lastArt, shownArt;
+    private String shownPkgArt;
     private String lastPkg, lastItem, lastMediaId, lastMediaUri;
     private PendingIntent lastSessionActivity;
     private int lastState;
@@ -2181,6 +2180,23 @@ public class HomeActivity extends Activity {
         if (lastArt == null) {
             Bitmap art = m.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
             if (art == null) art = m.getBitmap(MediaMetadata.METADATA_KEY_ART);
+            if (art == null) art = m.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+            if (art == null && m.getDescription() != null) {
+                art = m.getDescription().getIconBitmap();
+            }
+            if (art == null) {
+                String uriStr = m.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI);
+                if (uriStr == null) uriStr = m.getString(MediaMetadata.METADATA_KEY_ART_URI);
+                if (uriStr == null) uriStr = m.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI);
+                if (uriStr == null && m.getDescription() != null && m.getDescription().getIconUri() != null) {
+                    uriStr = m.getDescription().getIconUri().toString();
+                }
+                if (uriStr != null && uriStr.startsWith("content://")) {
+                    try (java.io.InputStream in = getContentResolver().openInputStream(Uri.parse(uriStr))) {
+                        art = BitmapFactory.decodeStream(in);
+                    } catch (Throwable ignored) {}
+                }
+            }
             lastArt = art;
         }
         lastMediaId = m.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
@@ -2222,16 +2238,43 @@ public class HomeActivity extends Activity {
         lastPkg = lastItem = lastMediaId = lastMediaUri = null;
         lastTitle = lastArtist = null;
         lastArt = shownArt = null;
-        if (nowArt != null) nowArt.setImageBitmap(null);
+        shownPkgArt = null;
+        if (nowArt != null) {
+            nowArt.setImageDrawable(null);
+            nowArt.setPadding(0, 0, 0, 0);
+        }
         lastSessionActivity = null;
         lastPosition = lastDuration = 0;
         handler.removeCallbacks(expire);
     }
 
     private void showArt() {
-        if (shownArt == lastArt) return;
-        nowArt.setImageBitmap(lastArt);
-        shownArt = lastArt;
+        if (shownArt == lastArt && ((lastArt != null) || (lastPkg != null && lastPkg.equals(shownPkgArt)))) return;
+        if (lastArt != null) {
+            nowArt.setImageBitmap(lastArt);
+            nowArt.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            nowArt.setPadding(0, 0, 0, 0);
+            shownArt = lastArt;
+            shownPkgArt = null;
+        } else if (lastPkg != null) {
+            try {
+                Drawable icon = pm.getApplicationIcon(lastPkg);
+                nowArt.setImageDrawable(icon);
+                nowArt.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                int p = dp(8);
+                nowArt.setPadding(p, p, p, p);
+            } catch (Exception e) {
+                nowArt.setImageDrawable(null);
+                nowArt.setPadding(0, 0, 0, 0);
+            }
+            shownArt = null;
+            shownPkgArt = lastPkg;
+        } else {
+            nowArt.setImageDrawable(null);
+            nowArt.setPadding(0, 0, 0, 0);
+            shownArt = null;
+            shownPkgArt = null;
+        }
     }
 
     /** The remembered card: paused at where you left off; play brings that item back (see resumeRemembered). */
