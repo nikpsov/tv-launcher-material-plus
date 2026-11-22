@@ -1222,7 +1222,7 @@ public class HomeActivity extends Activity {
         if (inDock) {
             EqualizerBadge badge = new EqualizerBadge(this);
             badge.setVisibility(View.GONE);
-            badge.setColors(0x00000000, 0xFFE6E1E5);
+            badge.setColors(0x00000000, palette.onSurfaceVariant);
             LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(dp(18), dp(22));
             bl.setMarginEnd(dp(6));
             captionRow.addView(badge, bl);
@@ -1875,6 +1875,9 @@ public class HomeActivity extends Activity {
         nav.setPalette(next);
         if (wifiPill != null) {
             wifiPill.setPalette(next);
+        }
+        for (EqualizerBadge badge : dockBadges.values()) {
+            badge.setColors(0x00000000, next.onSurfaceVariant);
         }
         styleNowPlaying();
     }
