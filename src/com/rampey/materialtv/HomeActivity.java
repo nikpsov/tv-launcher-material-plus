@@ -2319,14 +2319,11 @@ public class HomeActivity extends Activity {
                 .setItems(items, (d, which) -> {
                     if (which == 0) {
                         if (pinned) {
-                            PinnedApps.unpin(this, pkg);
-                            dockKey = "";
-                            fillDock();
-                            Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
+                            unpinApp(pkg, label);
                         } else {
                             PinnedApps.pin(this, pkg);
                             dockKey = "";
-                            fillDock();
+                            fillDock(true);
                             Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
                         }
                     } else if (which == 1) {
@@ -2359,7 +2356,7 @@ public class HomeActivity extends Activity {
                         if (which == 0) {
                             PinnedApps.pin(this, pkg);
                             dockKey = "";
-                            fillDock();
+                            fillDock(true);
                             Toast.makeText(this, label + " закреплено", Toast.LENGTH_SHORT).show();
                         } else if (which == 1) {
                             openAppSettings(pkg);
@@ -2380,10 +2377,34 @@ public class HomeActivity extends Activity {
     }
 
     private void unpinApp(String pkg, CharSequence label) {
-        PinnedApps.unpin(this, pkg);
-        dockKey = "";
-        fillDock();
-        Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
+        View card = dock != null ? dock.findViewWithTag(pkg) : null;
+        View holder = card != null ? findTileHolder(card) : null;
+        List<String> pinned = PinnedApps.load(this);
+        boolean isLast = pinned.size() <= 1 && cecDevices().isEmpty();
+
+        if (holder != null && !showingApps) {
+            if (isLast) {
+                View plusCard = dock.findViewWithTag(":compact_plus:");
+                View plusHolder = plusCard != null ? findTileHolder(plusCard) : null;
+                if (plusHolder != null) {
+                    plusHolder.animate().alpha(0f).scaleX(0.85f).scaleY(0.85f)
+                            .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.FAST_EFFECTS_MS).start();
+                }
+            }
+            holder.animate().alpha(0f).scaleX(0.85f).scaleY(0.85f)
+                    .setInterpolator(Motion.FAST_EFFECTS).setDuration(Motion.FAST_EFFECTS_MS)
+                    .withEndAction(() -> {
+                        PinnedApps.unpin(this, pkg);
+                        dockKey = "";
+                        fillDock(true);
+                        Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
+                    }).start();
+        } else {
+            PinnedApps.unpin(this, pkg);
+            dockKey = "";
+            fillDock(true);
+            Toast.makeText(this, label + " откреплено", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void startReordering(String pkg) {
