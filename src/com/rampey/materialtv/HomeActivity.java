@@ -719,37 +719,13 @@ public class HomeActivity extends Activity {
 
     // ---- content ----
 
-    private static final int MIN_DOCK_SIZE = 6;
-    /** Never in the dock: settings, the stock home screen and system helpers. */
-    private static final java.util.Set<String> NOT_IN_DOCK = new java.util.HashSet<>(java.util.Arrays.asList(
-            "com.android.tv.settings", "com.google.android.apps.tv.launcherx", "com.google.android.tungsten.setupwraith",
-            "com.google.android.katniss", "com.android.vending", "com.android.systemui"));
-
-    /** The dock: pinned apps followed by most-used apps of the last 14 days, topped up from installed apps. */
+    /** The dock: pinned apps followed by HDMI devices (CEC). */
     private List<String> dockApps() {
         List<String> out = new ArrayList<>();
         for (String p : PinnedApps.load(this)) {
             if (launchIntent(p) != null && !p.equals(getPackageName()) && !out.contains(p)) {
                 out.add(p);
             }
-        }
-        // Screensaver apps rack up "use" while the screensaver runs: they never count toward the dock.
-        java.util.Set<String> screensavers = new java.util.HashSet<>();
-        for (ResolveInfo r : pm.queryIntentServices(new Intent("android.service.dreams.DreamService"), 0))
-            screensavers.add(r.serviceInfo.packageName);
-        try {
-            android.app.usage.UsageStatsManager usm = getSystemService(android.app.usage.UsageStatsManager.class);
-            long now = System.currentTimeMillis();
-            List<android.app.usage.UsageStats> used = new ArrayList<>(usm.queryAndAggregateUsageStats(now - 14L * 86_400_000L, now).values());
-            used.sort((a, b) -> Long.compare(b.getTotalTimeInForeground(), a.getTotalTimeInForeground()));
-            for (android.app.usage.UsageStats u : used) {
-                if (u.getTotalTimeInForeground() < 60_000) break;
-                String pkg = u.getPackageName();
-                if (out.contains(pkg) || pkg.equals(getPackageName()) || NOT_IN_DOCK.contains(pkg) || screensavers.contains(pkg) || launchIntent(pkg) == null) continue;
-                out.add(pkg);
-            }
-        } catch (RuntimeException ignored) {
-            // No usage access: the dock fills from installed apps below.
         }
         // HDMI devices that name themselves (CEC), e.g. "PlayStation 5", take the TV input app's place.
         String inputApp = inputApp();
@@ -759,34 +735,7 @@ public class HomeActivity extends Activity {
             out.remove(at);
             out.addAll(at, devices);
         } else if (!devices.isEmpty()) {
-            // Fresh TV: consoles still get a tile when there's room.
             for (String d : devices) if (!out.contains(d)) out.add(d);
-        }
-        boolean devicesShown = !devices.isEmpty() && out.contains(devices.get(0));
-        // Top up to MIN_DOCK_SIZE from this TV's own installed apps: most recently used first, then the newest installs.
-        if (out.size() < MIN_DOCK_SIZE) {
-            java.util.Map<String, Long> lastUsed = new java.util.HashMap<>();
-            try {
-                android.app.usage.UsageStatsManager usm = getSystemService(android.app.usage.UsageStatsManager.class);
-                long now = System.currentTimeMillis();
-                for (android.app.usage.UsageStats u : usm.queryAndAggregateUsageStats(now - 90L * 86_400_000L, now).values())
-                    lastUsed.put(u.getPackageName(), u.getLastTimeUsed());
-            } catch (RuntimeException ignored) {
-            }
-            List<String> rest = new ArrayList<>();
-            for (ResolveInfo info : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0)) {
-                String pkg = info.activityInfo.packageName;
-                if (!out.contains(pkg) && !rest.contains(pkg) && !pkg.equals(getPackageName()) && !NOT_IN_DOCK.contains(pkg)
-                        && !screensavers.contains(pkg) && !(devicesShown && pkg.equals(inputApp))) rest.add(pkg);
-            }
-            rest.sort((a, b) -> {
-                int byUse = Long.compare(lastUsed.getOrDefault(b, 0L), lastUsed.getOrDefault(a, 0L));
-                return byUse != 0 ? byUse : Long.compare(installTime(b), installTime(a));
-            });
-            for (String pkg : rest) {
-                if (out.size() >= MIN_DOCK_SIZE) break;
-                out.add(pkg);
-            }
         }
         return out;
     }
@@ -854,14 +803,6 @@ public class HomeActivity extends Activity {
         String[] dev = inputDevices.get(key);
         if (dev != null) return new Intent(Intent.ACTION_VIEW, android.media.tv.TvContract.buildChannelUriForPassthroughInput(dev[1]));
         return launchIntent(key);
-    }
-
-    private long installTime(String pkg) {
-        try {
-            return pm.getPackageInfo(pkg, 0).firstInstallTime;
-        } catch (PackageManager.NameNotFoundException e) {
-            return 0;
-        }
     }
 
     private void fillDock() {
