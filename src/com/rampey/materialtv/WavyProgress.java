@@ -84,8 +84,4 @@ final class WavyProgress extends View {
 
         if ((playing || Math.abs(amp - target) > 0.05f) && isShown()) postInvalidateOnAnimation();
     }
-
-    static int dp(Context c, float v) {
-        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.getResources().getDisplayMetrics()));
-    }
 }

@@ -92,8 +92,7 @@ public class HomeActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Integer> seedCache = new ConcurrentHashMap<>();
     private final Map<Integer, Palette> paletteCache = new ConcurrentHashMap<>();
-    private final Map<Integer, Typeface> titleFonts = new HashMap<>();
-    private final Map<Integer, Typeface> fonts = new HashMap<>();
+    private final Map<Long, Typeface> fontCache = new HashMap<>();
     private PackageManager pm;
     private Palette palette = Palette.of(Palette.DEFAULT_SEED);
 
@@ -223,7 +222,6 @@ public class HomeActivity extends Activity {
     private String appsKey = "";
     private String dockKey = "";
     private ValueAnimator colorAnimator;
-    private final Map<Integer, Typeface> clockFonts = new HashMap<>();
 
     /** Clock weight through the day: 250 at night, rising to 430 by mid-morning, easing back after sunset. */
     private static int clockWeight() {
@@ -241,19 +239,7 @@ public class HomeActivity extends Activity {
 
     private Typeface clockFont(int weight) {
         int w = Math.round(weight / 10f) * 10;
-        Typeface t = clockFonts.get(w);
-        if (t == null) {
-            try {
-                t = new Typeface.Builder(getAssets(), "fonts/GoogleSansFlex.ttf")
-                        .setWeight(w)
-                        .setFallback("sans-serif")
-                        .setFontVariationSettings("'wght' " + w + ", 'opsz' 48, 'ROND' 0").build();
-            } catch (RuntimeException e) {
-                t = font(300);
-            }
-            clockFonts.put(w, t);
-        }
-        return t;
+        return getCachedFont(w, 48, false);
     }
 
     /** A new minute: the old time lifts away, the new one settles in with a short weight swell. */
@@ -1774,54 +1760,55 @@ public class HomeActivity extends Activity {
         return false;
     }
 
-    private Typeface titleFont(int weight) {
-        return titleFont(weight, null);
-    }
+    private Typeface getCachedFont(int weight, int opsz, boolean cyrillic) {
+        long key = (cyrillic ? (1L << 32) : 0L) | (((long) opsz) << 16) | (weight & 0xFFFFL);
+        Typeface t = fontCache.get(key);
+        if (t != null) return t;
 
-    private Typeface titleFont(int weight, CharSequence text) {
-        if (hasCyrillic(text)) {
-            Typeface cyrillic = titleFonts.get(-weight);
-            if (cyrillic == null) {
-                try {
-                    cyrillic = Typeface.create(Typeface.SANS_SERIF, weight, false);
-                } catch (Exception ignored) {
-                    cyrillic = null;
-                }
-                if (cyrillic == null || (weight >= 700 && cyrillic.getWeight() < 600)) {
-                    try {
-                        cyrillic = Typeface.create("sans-serif-black", Typeface.NORMAL);
-                    } catch (Exception ignored) {
-                        cyrillic = null;
-                    }
-                }
-                if (cyrillic == null) {
-                    cyrillic = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD);
-                }
-                titleFonts.put(-weight, cyrillic);
+        if (cyrillic) {
+            try {
+                t = Typeface.create(Typeface.SANS_SERIF, weight, false);
+            } catch (Exception ignored) {
+                t = null;
             }
-            return cyrillic;
-        }
-        Typeface t = titleFonts.get(weight);
-        if (t == null) {
+            if (t == null || (weight >= 700 && t.getWeight() < 600)) {
+                try {
+                    t = Typeface.create("sans-serif-black", Typeface.NORMAL);
+                } catch (Exception ignored) {
+                    t = null;
+                }
+            }
+            if (t == null) {
+                t = Typeface.create(Typeface.SANS_SERIF, weight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
+            }
+        } else {
             try {
                 t = new Typeface.Builder(getAssets(), "fonts/GoogleSansFlex.ttf")
                         .setWeight(weight)
                         .setFallback("sans-serif")
-                        .setFontVariationSettings("'wght' " + weight + ", 'opsz' 48, 'ROND' 0")
+                        .setFontVariationSettings("'wght' " + weight + ", 'opsz' " + opsz + ", 'ROND' 0")
                         .build();
-            } catch (RuntimeException e) {
+            } catch (RuntimeException ignored) {
                 t = null;
             }
             if (t == null) {
                 try {
                     t = Typeface.create(Typeface.SANS_SERIF, weight, false);
                 } catch (Exception ignored) {
-                    t = Typeface.create("sans-serif-black", Typeface.NORMAL);
+                    t = Typeface.create(weight >= 700 ? "sans-serif-black" : "sans-serif", weight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
                 }
             }
-            titleFonts.put(weight, t);
         }
+        fontCache.put(key, t);
         return t;
+    }
+
+    private Typeface titleFont(int weight) {
+        return titleFont(weight, null);
+    }
+
+    private Typeface titleFont(int weight, CharSequence text) {
+        return getCachedFont(weight, 48, hasCyrillic(text));
     }
 
     /** Each app gets its own Expressive shape; moving between apps morphs one outline into the next. */
@@ -2640,42 +2627,7 @@ public class HomeActivity extends Activity {
 
     private Typeface font(int requested, CharSequence text) {
         int weight = requested <= 400 ? 300 : requested <= 650 ? 560 : requested <= 790 ? 760 : 820;
-        if (hasCyrillic(text)) {
-            Typeface cyrillic = fonts.get(-weight);
-            if (cyrillic == null) {
-                try {
-                    cyrillic = Typeface.create(Typeface.SANS_SERIF, weight, false);
-                } catch (Exception ignored) {
-                    cyrillic = null;
-                }
-                if (cyrillic == null) {
-                    cyrillic = Typeface.create(Typeface.SANS_SERIF, weight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
-                }
-                fonts.put(-weight, cyrillic);
-            }
-            return cyrillic;
-        }
-        Typeface t = fonts.get(weight);
-        if (t == null) {
-            try {
-                t = new Typeface.Builder(getAssets(), "fonts/GoogleSansFlex.ttf")
-                        .setWeight(weight)
-                        .setFallback("sans-serif")
-                        .setFontVariationSettings("'wght' " + weight + ", 'opsz' 24, 'ROND' 0")
-                        .build();
-            } catch (RuntimeException e) {
-                t = null;
-            }
-            if (t == null) {
-                try {
-                    t = Typeface.create(Typeface.SANS_SERIF, weight, false);
-                } catch (Exception ignored) {
-                    t = Typeface.create("sans-serif", weight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
-                }
-            }
-            fonts.put(weight, t);
-        }
-        return t;
+        return getCachedFont(weight, 24, hasCyrillic(text));
     }
 
     private TextView text(CharSequence value, float sp, int color, int weight) {
@@ -2696,6 +2648,6 @@ public class HomeActivity extends Activity {
     }
 
     private int dp(float value) {
-        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics()));
+        return Focus.dp(this, value);
     }
 }

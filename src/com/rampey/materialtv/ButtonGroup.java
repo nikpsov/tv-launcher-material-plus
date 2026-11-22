@@ -185,7 +185,7 @@ final class ButtonGroup extends LinearLayout {
     }
 
     private int dp(float v) {
-        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()));
+        return Focus.dp(getContext(), v);
     }
 
     View button(int index) {
