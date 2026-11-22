@@ -33,17 +33,16 @@ import java.util.Locale;
  * The clock block moves a little every minute so nothing sits still on the panel for hours.
  */
 public class Screensaver extends DreamService {
-    private static final long FRAME_MS = 0;           // every display frame: 60 fps on a 60 Hz TV (owner choice)
     private static final long PALETTE_EVERY = 60 * 60_000L;   // a new wallpaper every hour (owner choice)
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final android.animation.ArgbEvaluator argb = new android.animation.ArgbEvaluator();
     private FrameLayout root;
     private ShapeScene scene;
     private LinearLayout block;
     private TextView clock, date, song;
     private double hue;
     private long seed;
-    private long last;
     private boolean running;
     private int minuteShift;
     private final SimpleDateFormat timeFormat12 = new SimpleDateFormat("h:mm", Locale.getDefault());
@@ -53,11 +52,7 @@ public class Screensaver extends DreamService {
     private final Runnable drift = new Runnable() {
         @Override public void run() {
             if (!running) return;
-            long now = SystemClock.uptimeMillis();
-            if (last == 0 || now - last >= FRAME_MS) {
-                scene.invalidate();
-                last = now;
-            }
+            scene.invalidate();
             root.postOnAnimation(this);
         }
     };
@@ -109,7 +104,6 @@ public class Screensaver extends DreamService {
     @Override public void onDreamingStarted() {
         super.onDreamingStarted();
         running = true;
-        last = 0;
         root.postOnAnimation(drift);
         handler.post(tick);
         handler.postDelayed(shift, PALETTE_EVERY);
@@ -125,9 +119,8 @@ public class Screensaver extends DreamService {
     private View build() {
         root = new FrameLayout(this);
         root.setBackgroundColor(0xFF000000);
-        root.addView(new View(this));   // index 0 placeholder so scenes always sit under the clock
         scene = sceneForNow();
-        root.addView(scene, 1, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(scene, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         block = new LinearLayout(this);
         block.setOrientation(LinearLayout.VERTICAL);
@@ -173,7 +166,6 @@ public class Screensaver extends DreamService {
     /** Glide the clock's colors to the new wallpaper's palette. */
     private void recolorText(ShapeScene next) {
         int c0 = clock.getCurrentTextColor(), d0 = date.getCurrentTextColor(), s0 = song.getCurrentTextColor();
-        android.animation.ArgbEvaluator argb = new android.animation.ArgbEvaluator();
         ValueAnimator a = ValueAnimator.ofFloat(0f, 1f).setDuration(2400);
         a.addUpdateListener(an -> {
             float t = (float) an.getAnimatedValue();

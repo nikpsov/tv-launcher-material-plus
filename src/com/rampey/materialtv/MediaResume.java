@@ -16,6 +16,7 @@ final class MediaResume implements Runnable {
     private final String pkg, title;
     private final long deadline, position;
     private boolean sent, sought, cancelled;
+    private int attempts;
     MediaResume(Context context, Handler handler, String pkg, CharSequence title, long position) {
         this.context = context.getApplicationContext(); this.handler = handler; this.pkg = pkg;
         this.title = title == null ? "" : title.toString();
@@ -30,7 +31,7 @@ final class MediaResume implements Runnable {
                 && title.equals(metadata.getString(MediaMetadata.METADATA_KEY_TITLE));
     }
     @Override public void run() {
-        if (cancelled || SystemClock.elapsedRealtime() >= deadline) return;
+        if (++attempts > 40 || cancelled || SystemClock.elapsedRealtime() >= deadline) return;
         try {
             MediaSessionManager manager = context.getSystemService(MediaSessionManager.class);
             if (manager != null) for (MediaController controller : manager.getActiveSessions(new ComponentName(context, MediaListener.class))) {

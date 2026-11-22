@@ -71,7 +71,13 @@ public class HomeKeyService extends AccessibilityService {
     @Override protected void onServiceConnected() {
         // The system binds this service a moment after boot, when Google TV's home screen is already up and has
         // sent its last window event. In the first minutes after boot, bring this home screen up directly.
-        if (SystemClock.elapsedRealtime() < 5 * 60_000) openHome();
+        if (SystemClock.elapsedRealtime() < 5 * 60_000) {
+            android.view.accessibility.AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root != null && getPackageName().equals(root.getPackageName())) {
+                return;
+            }
+            openHome();
+        }
     }
 
     @Override public void onInterrupt() {

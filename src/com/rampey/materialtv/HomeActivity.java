@@ -93,6 +93,11 @@ public class HomeActivity extends Activity {
     private final Map<String, Integer> seedCache = new ConcurrentHashMap<>();
     private final Map<Integer, Palette> paletteCache = new ConcurrentHashMap<>();
     private final Map<Long, Typeface> fontCache = new HashMap<>();
+    private final java.util.concurrent.ExecutorService paletteExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "palette-warmup");
+        t.setPriority(Thread.NORM_PRIORITY - 1);
+        return t;
+    });
     private PackageManager pm;
     private Palette palette = Palette.of(Palette.DEFAULT_SEED);
 
@@ -104,17 +109,15 @@ public class HomeActivity extends Activity {
      * while Home is on screen; the shape is a hardware layer, so each frame just rotates a texture.
      */
     private long driftLast;
-    private static final long DRIFT_FRAME_MS = 0;   // every display frame (60 fps on a 60 Hz TV)
     private boolean drifting;
     private final Runnable drift = new Runnable() {
         @Override public void run() {
             if (!drifting) return;
             long now = android.os.SystemClock.uptimeMillis();
-            // Every display frame: 60 fps on a 60 Hz TV (owner choice; ~50% of one core, only while Home is up).
-            if (driftLast == 0 || now - driftLast >= DRIFT_FRAME_MS) {
-                if (driftLast > 0) shape.setRotation((shape.getRotation() + 0.003f * (now - driftLast)) % 360f);
-                driftLast = now;
+            if (driftLast > 0) {
+                shape.setRotation((shape.getRotation() + 0.003f * (now - driftLast)) % 360f);
             }
+            driftLast = now;
             shape.postOnAnimation(this);
         }
     };
@@ -338,6 +341,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (pendingResume != null) pendingResume.cancel();
+        paletteExecutor.shutdownNow();
         stopNowPlaying();
         if (wifiCallback != null) {
             try {
@@ -1735,7 +1739,7 @@ public class HomeActivity extends Activity {
 
     /** Work out every favorite's colors on a background thread, so the first focus on each app costs nothing. */
     private void warmPalettes(List<String> packages) {
-        new Thread(() -> {
+        paletteExecutor.submit(() -> {
             for (String pkg : packages) {
                 if (seedCache.containsKey(pkg)) continue;
                 try {
@@ -1745,10 +1749,10 @@ public class HomeActivity extends Activity {
                     int seed = Palette.seedFrom(art);
                     seedCache.put(pkg, seed);
                     if (!paletteCache.containsKey(seed)) paletteCache.put(seed, Palette.of(seed));
-                } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
+                } catch (Throwable ignored) {
                 }
             }
-        }, "palette-warmup").start();
+        });
     }
 
     private static boolean hasCyrillic(CharSequence cs) {
