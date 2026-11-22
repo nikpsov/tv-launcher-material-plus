@@ -1401,10 +1401,18 @@ public class HomeActivity extends Activity {
 
     /** The focus ring fades in (fast effects) in the palette's focus color instead of snapping on. */
     private void fadeRing(ValueAnimator[] ringAnim, GradientDrawable ring, boolean focused) {
-        if (ringAnim[0] != null) ringAnim[0].cancel();
+        int startAlpha = focused ? 0 : 255;
+        if (ringAnim[0] != null) {
+            if (ringAnim[0].isRunning()) {
+                Object current = ringAnim[0].getAnimatedValue();
+                if (current instanceof Integer) startAlpha = (Integer) current;
+            }
+            ringAnim[0].cancel();
+        }
+        int targetAlpha = focused ? 255 : 0;
+        if (startAlpha == targetAlpha) return;
         int color = palette.inverseSurface;
-        ring.setColor(Color.TRANSPARENT);
-        ValueAnimator a = ValueAnimator.ofInt(focused ? 0 : 255, focused ? 255 : 0).setDuration(Motion.FAST_EFFECTS_MS);
+        ValueAnimator a = ValueAnimator.ofInt(startAlpha, targetAlpha).setDuration(Motion.FAST_EFFECTS_MS);
         a.setInterpolator(Motion.FAST_EFFECTS);
         a.addUpdateListener(an -> {
             int alpha = (int) an.getAnimatedValue();
