@@ -242,6 +242,8 @@ public class HomeActivity extends Activity {
         if (t == null) {
             try {
                 t = new Typeface.Builder(getAssets(), "fonts/GoogleSansFlex.ttf")
+                        .setWeight(w)
+                        .setFallback("sans-serif")
                         .setFontVariationSettings("'wght' " + w + ", 'opsz' 48, 'ROND' 0").build();
             } catch (RuntimeException e) {
                 t = font(300);
@@ -278,7 +280,9 @@ public class HomeActivity extends Activity {
             } else if (!time.contentEquals(clock.getText())) {
                 changeClock(time);
             }
-            date.setText(new SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(now));
+            String dateStr = new SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(now);
+            date.setTypeface(font(500, dateStr));
+            date.setText(dateStr);
             handler.postDelayed(this, 15_000);
         }
     };
@@ -287,6 +291,7 @@ public class HomeActivity extends Activity {
         super.onCreate(state);
         pm = getPackageManager();
         titleFont(820);
+        titleFont(820, "А");
         setContentView(buildRoot());
         registerWifiCallback();
     }
@@ -481,7 +486,7 @@ public class HomeActivity extends Activity {
         when.addView(date);
         bar.addView(when, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.TOP));
 
-        nav = new ButtonGroup(this, font(600), palette,
+        nav = new ButtonGroup(this, font(600, "Главная"), palette,
                 new String[]{"Главная", "Приложения", "Настройки"},
                 new int[]{R.drawable.ic_home, R.drawable.ic_apps, R.drawable.ic_settings},
                 new boolean[]{true, true, false},
@@ -503,7 +508,7 @@ public class HomeActivity extends Activity {
         Space tabGap = new Space(this);
         topEndRow.addView(tabGap, new LinearLayout.LayoutParams(dp(12), 1));
 
-        wifiPill = new ButtonGroup(this, font(600), palette,
+        wifiPill = new ButtonGroup(this, font(600, "Не подключено"), palette,
                 new String[]{"Wi-Fi"},
                 new int[]{R.drawable.ic_wifi},
                 new boolean[]{false},
@@ -582,7 +587,7 @@ public class HomeActivity extends Activity {
         }
 
         if (!connected) {
-            setWifiPillState(false, "не подключено");
+            setWifiPillState(false, "Не подключено");
         } else if (ssid != null && !ssid.isEmpty() && !"<unknown ssid>".equals(ssid)) {
             setWifiPillState(true, ssid);
         } else {
@@ -1393,8 +1398,9 @@ public class HomeActivity extends Activity {
     /** Runs once focus has rested for a moment: the title, the background shape and the colors follow the app. */
     private void applyFocus(String pkg, CharSequence label, Drawable art) {
         if (!showingApps && label != null && !TextUtils.equals(focusTitle.getText(), label)) {
-            focusTitle.setTypeface(titleFont(820));
+            focusTitle.setTypeface(titleFont(820, label));
             focusTitle.setText(label);
+            focusTitle.setTextColor(palette.onSurface);
             focusTitle.setAlpha(0f);
             focusTitle.setTranslationY(dp(12));
             focusTitle.animate().alpha(1f).translationY(0).setInterpolator(Motion.DEFAULT_SPATIAL).setDuration(Motion.DEFAULT_SPATIAL_MS).start();
@@ -1591,7 +1597,7 @@ public class HomeActivity extends Activity {
         TextView title = new TextView(this);
         title.setText("Закрепить приложения");
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
-        title.setTypeface(titleFont(820));
+        title.setTypeface(titleFont(820, "Закрепить приложения"));
         title.setTextColor(palette.onSurface);
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -1599,21 +1605,29 @@ public class HomeActivity extends Activity {
         doneBtn.setId(View.generateViewId());
         doneBtn.setText("Готово");
         doneBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        doneBtn.setTypeface(font(760));
+        doneBtn.setTypeface(font(600, "Готово"));
         doneBtn.setGravity(Gravity.CENTER);
         doneBtn.setFocusable(true);
         doneBtn.setClickable(true);
-        doneBtn.setPadding(dp(24), dp(10), dp(24), dp(10));
+        doneBtn.setPadding(dp(20), dp(11), dp(20), dp(11));
         GradientDrawable doneShape = new GradientDrawable();
-        doneShape.setCornerRadius(dp(20));
+        doneShape.setCornerRadius(dp(24));
         doneShape.setColor(palette.containerHigh);
         doneBtn.setBackground(doneShape);
         doneBtn.setTextColor(palette.onSurface);
 
+        final ValueAnimator[] doneAnim = new ValueAnimator[1];
+        final int[] curDoneColor = new int[]{palette.containerHigh};
         doneBtn.setOnFocusChangeListener((v, focused) -> {
-            doneBtn.animate().scaleX(focused ? 1.08f : 1.0f).scaleY(focused ? 1.08f : 1.0f)
-                    .setInterpolator(Motion.FAST_SPATIAL).setDuration(Motion.FAST_SPATIAL_MS).start();
-            doneShape.setColor(focused ? palette.inverseSurface : palette.containerHigh);
+            if (doneAnim[0] != null) doneAnim[0].cancel();
+            int target = focused ? palette.inverseSurface : palette.containerHigh;
+            doneAnim[0] = ValueAnimator.ofArgb(curDoneColor[0], target).setDuration(Motion.DEFAULT_EFFECTS_MS);
+            doneAnim[0].setInterpolator(Motion.DEFAULT_EFFECTS);
+            doneAnim[0].addUpdateListener(a -> {
+                curDoneColor[0] = (int) a.getAnimatedValue();
+                doneShape.setColor(curDoneColor[0]);
+            });
+            doneAnim[0].start();
             doneBtn.setTextColor(focused ? palette.inverseOnSurface : palette.onSurface);
         });
 
@@ -1730,14 +1744,59 @@ public class HomeActivity extends Activity {
         }, "palette-warmup").start();
     }
 
+    private static boolean hasCyrillic(CharSequence cs) {
+        if (cs == null) return false;
+        for (int i = 0; i < cs.length(); i++) {
+            char c = cs.charAt(i);
+            if ((c >= 0x0400 && c <= 0x04FF) || (c >= 0x0500 && c <= 0x052F)) return true;
+        }
+        return false;
+    }
+
     private Typeface titleFont(int weight) {
+        return titleFont(weight, null);
+    }
+
+    private Typeface titleFont(int weight, CharSequence text) {
+        if (hasCyrillic(text)) {
+            Typeface cyrillic = titleFonts.get(-weight);
+            if (cyrillic == null) {
+                try {
+                    cyrillic = Typeface.create(Typeface.SANS_SERIF, weight, false);
+                } catch (Exception ignored) {
+                    cyrillic = null;
+                }
+                if (cyrillic == null || (weight >= 700 && cyrillic.getWeight() < 600)) {
+                    try {
+                        cyrillic = Typeface.create("sans-serif-black", Typeface.NORMAL);
+                    } catch (Exception ignored) {
+                        cyrillic = null;
+                    }
+                }
+                if (cyrillic == null) {
+                    cyrillic = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD);
+                }
+                titleFonts.put(-weight, cyrillic);
+            }
+            return cyrillic;
+        }
         Typeface t = titleFonts.get(weight);
         if (t == null) {
             try {
                 t = new Typeface.Builder(getAssets(), "fonts/GoogleSansFlex.ttf")
-                        .setFontVariationSettings("'wght' " + weight + ", 'opsz' 48, 'ROND' 0").build();
+                        .setWeight(weight)
+                        .setFallback("sans-serif")
+                        .setFontVariationSettings("'wght' " + weight + ", 'opsz' 48, 'ROND' 0")
+                        .build();
             } catch (RuntimeException e) {
-                t = font(820);
+                t = null;
+            }
+            if (t == null) {
+                try {
+                    t = Typeface.create(Typeface.SANS_SERIF, weight, false);
+                } catch (Exception ignored) {
+                    t = Typeface.create("sans-serif-black", Typeface.NORMAL);
+                }
             }
             titleFonts.put(weight, t);
         }
@@ -1780,6 +1839,9 @@ public class HomeActivity extends Activity {
             if (leftScrimShape != null && rightScrimShape != null) {
                 leftScrimShape.setColors(new int[]{withAlpha(containerColor, 0xF0), Color.TRANSPARENT});
                 rightScrimShape.setColors(new int[]{Color.TRANSPARENT, withAlpha(containerColor, 0xF0)});
+            }
+            if (focusTitle != null) {
+                focusTitle.setTextColor((int) argb.evaluate(t, from.onSurface, next.onSurface));
             }
         });
         colorAnimator.start();
@@ -2554,17 +2616,44 @@ public class HomeActivity extends Activity {
 
     /** Google Sans Flex at a given weight, standard terminals (axes 'wght', 'opsz'; 'ROND' 0); falls back to sans-serif. */
     private Typeface font(int requested) {
+        return font(requested, null);
+    }
+
+    private Typeface font(int requested, CharSequence text) {
         int weight = requested <= 400 ? 300 : requested <= 650 ? 560 : requested <= 790 ? 760 : 820;
+        if (hasCyrillic(text)) {
+            Typeface cyrillic = fonts.get(-weight);
+            if (cyrillic == null) {
+                try {
+                    cyrillic = Typeface.create(Typeface.SANS_SERIF, weight, false);
+                } catch (Exception ignored) {
+                    cyrillic = null;
+                }
+                if (cyrillic == null) {
+                    cyrillic = Typeface.create(Typeface.SANS_SERIF, weight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
+                }
+                fonts.put(-weight, cyrillic);
+            }
+            return cyrillic;
+        }
         Typeface t = fonts.get(weight);
         if (t == null) {
             try {
                 t = new Typeface.Builder(getAssets(), "fonts/GoogleSansFlex.ttf")
+                        .setWeight(weight)
+                        .setFallback("sans-serif")
                         .setFontVariationSettings("'wght' " + weight + ", 'opsz' 24, 'ROND' 0")
                         .build();
             } catch (RuntimeException e) {
                 t = null;
             }
-            if (t == null) t = Typeface.create("sans-serif", weight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
+            if (t == null) {
+                try {
+                    t = Typeface.create(Typeface.SANS_SERIF, weight, false);
+                } catch (Exception ignored) {
+                    t = Typeface.create("sans-serif", weight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
+                }
+            }
             fonts.put(weight, t);
         }
         return t;
@@ -2575,7 +2664,7 @@ public class HomeActivity extends Activity {
         t.setText(value);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
         t.setTextColor(color);
-        t.setTypeface(font(weight));
+        t.setTypeface(font(weight, value));
         return t;
     }
 
