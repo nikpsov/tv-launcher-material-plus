@@ -2405,9 +2405,9 @@ public class HomeActivity extends Activity {
 
     private void showDockContextMenu(String pkg, CharSequence label) {
         if (pkg != null && pkg.startsWith("input:")) return;
-        boolean pinned = PinnedApps.isPinned(this, pkg);
+        List<String> allPinned = PinnedApps.load(this);
+        boolean pinned = allPinned.contains(pkg);
         if (pinned) {
-            List<String> allPinned = PinnedApps.load(this);
             boolean canReorder = allPinned.size() > 1;
             String[] items = canReorder
                     ? new String[]{"Открепить", "Переместить", "Настройки приложения"}

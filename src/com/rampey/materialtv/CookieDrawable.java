@@ -14,6 +14,16 @@ import android.graphics.drawable.Drawable;
  */
 final class CookieDrawable extends Drawable {
     private static final int STEPS = 240;
+    private static final double[] ANGLES = new double[STEPS + 1];
+    private static final float[] COS_A = new float[STEPS + 1];
+    private static final float[] SIN_A = new float[STEPS + 1];
+    static {
+        for (int i = 0; i <= STEPS; i++) {
+            ANGLES[i] = 2 * Math.PI * i / STEPS;
+            COS_A[i] = (float) Math.cos(ANGLES[i]);
+            SIN_A[i] = (float) Math.sin(ANGLES[i]);
+        }
+    }
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private int fromLobes, toLobes;
@@ -55,6 +65,7 @@ final class CookieDrawable extends Drawable {
     }
 
     void setProgress(float progress) {
+        if (Math.abs(t - progress) < 0.002f) return;
         t = progress;
         rebuild(getBounds());
         invalidateSelf();
@@ -71,12 +82,12 @@ final class CookieDrawable extends Drawable {
         float maxDepth = Math.max(fromDepth, toDepth);
         float r = Math.min(b.width(), b.height()) / 2f / (1f + maxDepth);
         for (int i = 0; i <= STEPS; i++) {
-            double a = 2 * Math.PI * i / STEPS;
+            double a = ANGLES[i];
             float r1 = r * (1f + fromDepth * wave(a, fromLobes, fromSharp));
             float r2 = r * (1f + toDepth * wave(a, toLobes, toSharp));
             float rr = r1 + (r2 - r1) * t;
-            float x = cx + rr * (float) Math.cos(a);
-            float y = cy + rr * (float) Math.sin(a);
+            float x = cx + rr * COS_A[i];
+            float y = cy + rr * SIN_A[i];
             if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
         }
         path.close();

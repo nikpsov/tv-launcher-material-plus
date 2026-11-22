@@ -11,12 +11,17 @@ import java.util.List;
 final class PinnedApps {
     private static final String PREFS = "pinned";
     private static final String KEY = "packages";
+    private static List<String> cachedList = null;
 
     private PinnedApps() {}
 
-    static List<String> load(Context ctx) {
+    static synchronized List<String> load(Context ctx) {
+        if (cachedList != null) return new ArrayList<>(cachedList);
         String raw = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, "");
-        if (raw == null || raw.isEmpty()) return new ArrayList<>();
+        if (raw == null || raw.isEmpty()) {
+            cachedList = new ArrayList<>();
+            return new ArrayList<>();
+        }
         String[] parts = raw.split(",");
         List<String> list = new ArrayList<>();
         for (String s : parts) {
@@ -25,16 +30,18 @@ final class PinnedApps {
                 list.add(trimmed);
             }
         }
+        cachedList = new ArrayList<>(list);
         return list;
     }
 
-    static void save(Context ctx, List<String> packages) {
+    static synchronized void save(Context ctx, List<String> packages) {
+        cachedList = new ArrayList<>(packages);
         SharedPreferences.Editor ed = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
         ed.putString(KEY, TextUtils.join(",", packages));
         ed.apply();
     }
 
-    static void pin(Context ctx, String pkg) {
+    static synchronized void pin(Context ctx, String pkg) {
         List<String> list = load(ctx);
         if (!list.contains(pkg)) {
             list.add(pkg);
@@ -42,14 +49,14 @@ final class PinnedApps {
         }
     }
 
-    static void unpin(Context ctx, String pkg) {
+    static synchronized void unpin(Context ctx, String pkg) {
         List<String> list = load(ctx);
         if (list.remove(pkg)) {
             save(ctx, list);
         }
     }
 
-    static boolean isPinned(Context ctx, String pkg) {
+    static synchronized boolean isPinned(Context ctx, String pkg) {
         return load(ctx).contains(pkg);
     }
 }
